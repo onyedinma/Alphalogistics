@@ -6,7 +6,16 @@
       "@/*": [
         "./*"
       ]
-    }
+    },
+    "typeRoots": [
+      "./types",
+      "./node_modules/@types"
+    ],
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "jsx": "react-native",
+    "esModuleInterop": true,
+    "types": ["cookie"]
   },
   "include": [
     "**/*.ts",

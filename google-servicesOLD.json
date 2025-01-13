@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "733359249229",
+    "project_id": "alphalogistics-452e4",
+    "storage_bucket": "alphalogistics-452e4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:733359249229:android:bc83eee2fa11b215af0904",
+        "android_client_info": {
+          "package_name": "com.kachkreative.Alphalogistics"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "733359249229-dp1ia5h7a1ijmlhtbsfmmhq4nussk3q7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kachkreative.Alphalogistics",
+            "certificate_hash": "ea734c437ef961c0fffc5fa6cc4dd281a4ff1f80"
+          }
+        },
+        {
+          "client_id": "733359249229-g8708ugilkga4u5m532rjfiqrcb91uef.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1pkwxsiSqR83kcAHbEtoyAJHQBHrlNb0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "733359249229-g8708ugilkga4u5m532rjfiqrcb91uef.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

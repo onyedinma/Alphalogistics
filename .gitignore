@@ -36,3 +36,7 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# API Keys and Secrets
+android/app/src/debug/res/values/secrets.xml
+android/app/src/release/res/values/secrets.xml
