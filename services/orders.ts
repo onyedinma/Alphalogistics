@@ -1,70 +1,112 @@
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
-import { Order, OrderItem, Location, OrderPricing, OrderInsurance, CreateOrderParams } from '@/types';
+import { StorageService } from './storage';
+import { Order } from '@/types';
 
-function generateTrackingNumber(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 7).toUpperCase();
-  return `AL${timestamp}${random}`;
-}
+export class OrderService {
+  static async createOrder(params: any) {
+    try {
+      const user = auth().currentUser;
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
 
-export async function createOrder({
-  items,
-  pickupLocation,
-  deliveryLocation,
-  pricing,
-  insurance,
-  sender,
-  receiver,
-  scheduledPickup,
-  vehicle,
-  deliveryPreferences,
-  rtoInformation,
-  paymentMethod,
-}: CreateOrderParams): Promise<Order> {
-  const user = auth().currentUser;
-  if (!user) throw new Error('User must be authenticated to create an order');
+      // Convert scheduledPickup from ISO string to Firestore timestamp
+      const scheduledPickup = params.delivery?.scheduledPickup
+        ? firestore.Timestamp.fromDate(new Date(params.delivery.scheduledPickup))
+        : null;
 
-  const trackingNumber = generateTrackingNumber();
-  const now = new Date();
+      const orderData = {
+        ...params,
+        customerId: user.uid,
+        status: 'pending',
+        createdAt: firestore.Timestamp.now(),
+        updatedAt: firestore.Timestamp.now(),
+        delivery: {
+          ...params.delivery,
+          scheduledPickup
+        }
+      };
 
-  // Process items to ensure they have the correct structure
-  const processedItems = items.map(item => ({
-    ...item,
-    // Ensure imageUri is renamed to imageUrl for consistency
-    imageUrl: item.imageUri,
-    imageUri: undefined
-  }));
+      const orderRef = await firestore().collection('orders').add(orderData);
+      await StorageService.clearOrderData();
+      return orderRef.id;
+    } catch (error) {
+      console.error('Error creating order:', error);
+      throw error;
+    }
+  }
 
-  const orderData: Order = {
-    id: '', // Will be set after creation
-    customerId: user.uid,
-    status: 'pending',
-    items: processedItems,
-    pickupLocation,
-    deliveryLocation,
-    pricing,
-    insurance,
-    sender,
-    receiver,
-    scheduledPickup: new Date(scheduledPickup),
-    vehicle,
-    deliveryPreferences,
-    rtoInformation,
-    paymentMethod,
-    trackingNumber,
-    createdAt: now,
-    updatedAt: now,
-  };
+  static async getActiveOrders() {
+    try {
+      const user = auth().currentUser;
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
 
-  try {
-    const orderRef = await firestore().collection('orders').add(orderData);
-    return {
-      ...orderData,
-      id: orderRef.id,
-    };
-  } catch (error) {
-    console.error('Error creating order:', error);
-    throw new Error('Failed to create order. Please try again.');
+      const snapshot = await firestore()
+        .collection('orders')
+        .where('customerId', '==', user.uid)
+        .where('status', 'in', ['pending', 'processing', 'in_transit'])
+        .orderBy('createdAt', 'desc')
+        .get();
+
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Order[];
+    } catch (error) {
+      console.error('Error getting active orders:', error);
+      throw error;
+    }
+  }
+
+  static async getOrderHistory() {
+    try {
+      const user = auth().currentUser;
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const snapshot = await firestore()
+        .collection('orders')
+        .where('customerId', '==', user.uid)
+        .where('status', 'in', ['delivered', 'cancelled'])
+        .orderBy('createdAt', 'desc')
+        .get();
+
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error getting order history:', error);
+      throw error;
+    }
+  }
+
+  static subscribeToOrder(orderId: string, callback: (order: any) => void) {
+    const user = auth().currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    return firestore()
+      .collection('orders')
+      .doc(orderId)
+      .onSnapshot(
+        (doc) => {
+          if (doc.exists) {
+            callback({
+              id: doc.id,
+              ...doc.data()
+            });
+          }
+        },
+        (error) => {
+          console.error('Error subscribing to order:', error);
+          throw error;
+        }
+      );
   }
 } 

@@ -1,24 +1,50 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Users Collection
     match /users/{userId} {
-      // Allow email checks
+      // Allow email existence checks without auth
       allow list: if request.query.limit == 1
         && request.query.filters.size == 1
         && request.query.filters[0].field == "email"
-        && request.query.filters[0].op == "==";
+        && request.query.filters[0].op == "=="
+        && request.query.filters[0].value is string;
 
-      // Allow authenticated operations
-      allow create: if request.auth != null;
+      // Allow authenticated users to create their own user document
+      allow create: if request.auth != null && request.auth.uid == userId;
+
+      // Allow authenticated users to read and write their own user document
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    // Orders Collection
     match /orders/{orderId} {
-      // Allow users to read and write their own orders
-      allow read, write: if request.auth != null && 
-        (resource == null || resource.data.customerId == request.auth.uid);
+      // Allow authenticated users to create orders with their UID as customerId
+      allow create: if request.auth != null 
+                    && request.resource.data.customerId == request.auth.uid;
+
+      // Allow reading, updating, and deleting orders based on roles and ownership
+      allow read, update, delete: if request.auth != null 
+        && (
+          // Customers can access their own orders
+          (resource.data.customerId == request.auth.uid) 
+
+          // Staff can access orders assigned to them
+          || (resource.data.assignedTo == request.auth.uid)
+
+          // Admins can access all orders
+          || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        );
     }
+
+    // Storage rules for items
+    match /items/{userId}/{allPaths=**} {
+      // Allow users to upload and read their own images
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Add additional collections and their respective rules here
   }
 }
 
@@ -29,4 +55,4 @@ service firebase.storage {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }
-} 
+}

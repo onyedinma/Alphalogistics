@@ -1,144 +1,159 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, TextInput, FlatList, TouchableOpacity, Text, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { GOOGLE_MAPS_API_KEY } from '@/config/maps';
 
-// Define interfaces
-interface GooglePlaceData {
-  description: string;
+interface Prediction {
   place_id: string;
-  structured_formatting?: {
+  description: string;
+  structured_formatting: {
     main_text: string;
     secondary_text: string;
   };
 }
 
-interface AddressComponent {
-  long_name: string;
-  short_name: string;
-  types: string[];
+interface RouteParams {
+  onSelect?: string;
+  returnTo?: string;
 }
 
-// Predefined countries and states
 const COUNTRIES = [
-  {
-    name: 'Nigeria',
-    code: 'ng',
-    states: [
-      'Lagos',
-      'Abuja',
-      'Rivers',
-      'Kano',
-      'Oyo',
-      'Delta',
-      'Kaduna',
-      'Ogun',
-      'Ondo',
-      'Edo',
-    ]
-  },
-  {
-    name: 'United States',
-    code: 'us',
-    states: [
-      'California',
-      'New York',
-      'Texas',
-      'Florida',
-      'Illinois',
-    ]
-  }
+  { code: 'ng', name: 'Nigeria' },
+  { code: 'gh', name: 'Ghana' },
 ];
 
 export default function AddressSearch() {
-  const params = useLocalSearchParams<{ 
-    returnTo?: string;
-    name?: string;
-    phone?: string;
-    phoneNumber?: string;
-    state?: string;
-    country?: string;
-    deliveryMethod?: string;
-  }>();
   const [searchQuery, setSearchQuery] = useState('');
-  const [predictions, setPredictions] = useState<GooglePlaceData[]>([]);
-  const [selectedCountry, setSelectedCountry] = useState('ng');
-  const [selectedState, setSelectedState] = useState('');
-  const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [predictions, setPredictions] = useState<Prediction[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]);
+  const params = useLocalSearchParams<RouteParams>();
 
-  useEffect(() => {
-    if (debounceTimeout.current) {
-      clearTimeout(debounceTimeout.current);
+  const searchPlaces = async (query: string) => {
+    if (!query.trim()) {
+      setPredictions([]);
+      return;
     }
 
-    debounceTimeout.current = setTimeout(() => {
-      const fetchPredictions = async () => {
-        if (searchQuery.length < 3) {
-          setPredictions([]);
-          return;
-        }
-        try {
-          const response = await fetch(
-            `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
-              searchQuery
-            )}&key=AIzaSyDZ5iJmOjngMwqNoqayEwiMXIRo9IPrgk4&components=country:${selectedCountry}&language=en`
-          );
-          const json = await response.json();
-          setPredictions(json.predictions || []);
-        } catch (error) {
-          console.error('Error fetching predictions:', error);
-          Alert.alert('Error', 'Failed to fetch address predictions. Please try again.');
-        }
-      };
-
-      fetchPredictions();
-    }, 300);
-
-    return () => {
-      if (debounceTimeout.current) {
-        clearTimeout(debounceTimeout.current);
-      }
-    };
-  }, [searchQuery, selectedCountry]);
-
-  const handleSelect = async (data: GooglePlaceData) => {
     try {
+      setIsLoading(true);
       const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${data.place_id}&key=AIzaSyDZ5iJmOjngMwqNoqayEwiMXIRo9IPrgk4&language=en`
+        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
+          query
+        )}&components=country:${selectedCountry.code}&key=${GOOGLE_MAPS_API_KEY}`
       );
-      const json = await response.json();
-      const details = json.result;
-
-      let stateName = selectedState;
-
-      if (!stateName && details?.address_components) {
-        const stateComponent = details.address_components.find(
-          (c: AddressComponent) => c.types.includes('administrative_area_level_1')
-        );
-        if (stateComponent) {
-          stateName = stateComponent.long_name;
-        }
+      const data = await response.json();
+      
+      if (data.status === 'OK') {
+        setPredictions(data.predictions);
+      } else {
+        console.error('Places API error:', data.status);
+        setPredictions([]);
       }
-
-      const returnPath = params.returnTo === 'receiver' 
-        ? '/(dashboard)/customer/receiver-details'
-        : '/(dashboard)/customer/sender';
-
-      router.push({
-        pathname: returnPath,
-        params: {
-          address: details?.formatted_address || data.description,
-          state: stateName,
-          name: params.name,
-          phone: params.phone || params.phoneNumber,
-          country: params.country,
-          deliveryMethod: params.deliveryMethod,
-        },
-      });
     } catch (error) {
-      console.error('Error fetching place details:', error);
-      Alert.alert('Error', 'Failed to fetch place details. Please try again.');
+      console.error('Error fetching predictions:', error);
+      Alert.alert('Error', 'Failed to fetch address suggestions');
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  const getPlaceDetails = async (placeId: string) => {
+    try {
+      setIsLoading(true);
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=formatted_address,address_components&key=${GOOGLE_MAPS_API_KEY}`
+      );
+      const data = await response.json();
+
+      if (data.status === 'OK') {
+        const addressComponents = data.result.address_components;
+        let state = '';
+        let country = '';
+        let streetNumber = '';
+        let route = '';
+        let locality = '';
+        let city = '';
+        let postalCode = '';
+        
+        // Extract all address components
+        for (const component of addressComponents) {
+          const types = component.types;
+          if (types.includes('street_number')) {
+            streetNumber = component.long_name;
+          } else if (types.includes('route')) {
+            route = component.long_name;
+          } else if (types.includes('sublocality') || types.includes('neighborhood')) {
+            locality = component.long_name;
+          } else if (types.includes('locality') || types.includes('administrative_area_level_2')) {
+            city = component.long_name;
+          } else if (types.includes('administrative_area_level_1')) {
+            state = component.long_name;
+          } else if (types.includes('country')) {
+            country = component.long_name;
+          } else if (types.includes('postal_code')) {
+            postalCode = component.long_name;
+          }
+        }
+
+        // Combine street number and route for street address
+        const streetAddress = [streetNumber, route].filter(Boolean).join(' ');
+
+        // Navigate back based on returnTo parameter
+        if (params.returnTo === 'sender') {
+          router.push({
+            pathname: '/(dashboard)/customer/sender',
+            params: {
+              selectedAddress: data.result.formatted_address,
+              selectedState: state || 'Unknown State',
+              selectedCountry: country,
+            }
+          });
+        } else if (params.returnTo === 'receiver') {
+          router.push({
+            pathname: '/(dashboard)/customer/receiver',
+            params: {
+              selectedAddress: data.result.formatted_address,
+              selectedState: state || 'Unknown State',
+              selectedCountry: country,
+              selectedStreetNumber: streetAddress,
+              selectedLocality: locality,
+              selectedCity: city,
+              selectedPostalCode: postalCode,
+              showManualEntry: 'true' // To automatically show the manual entry fields
+            }
+          });
+        }
+      } else {
+        throw new Error('Failed to get place details');
+      }
+    } catch (error) {
+      console.error('Error fetching place details:', error);
+      Alert.alert('Error', 'Failed to get address details');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const debounceTimeout = setTimeout(() => {
+      if (searchQuery) {
+        searchPlaces(searchQuery);
+      }
+    }, 500);
+
+    return () => clearTimeout(debounceTimeout);
+  }, [searchQuery, selectedCountry]);
 
   return (
     <View style={styles.container}>
@@ -149,76 +164,66 @@ export default function AddressSearch() {
         }}
       />
 
-      {/* Country Selection */}
-      <View style={styles.selectContainer}>
-        <Text style={styles.label}>Select Country:</Text>
-        <View style={styles.buttonContainer}>
+      <View style={styles.searchContainer}>
+        <View style={styles.countrySelector}>
           {COUNTRIES.map((country) => (
             <TouchableOpacity
               key={country.code}
               style={[
                 styles.countryButton,
-                selectedCountry === country.code && styles.selectedButton,
+                selectedCountry.code === country.code && styles.selectedCountry,
               ]}
-              onPress={() => {
-                setSelectedCountry(country.code);
-                setSelectedState('');
-              }}
+              onPress={() => setSelectedCountry(country)}
             >
-              <Text style={[
-                styles.buttonText,
-                selectedCountry === country.code && styles.selectedButtonText
-              ]}>
+              <Text
+                style={[
+                  styles.countryButtonText,
+                  selectedCountry.code === country.code && styles.selectedCountryText,
+                ]}
+              >
                 {country.name}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
+        <View style={styles.searchInputContainer}>
+          <Ionicons name="search-outline" size={20} color="#666" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder={`Search for an address in ${selectedCountry.name}`}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoFocus
+            clearButtonMode="while-editing"
+          />
+        </View>
       </View>
 
-      {/* State Selection */}
-      <View style={styles.selectContainer}>
-        <Text style={styles.label}>Select State:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.buttonContainer}>
-            {COUNTRIES.find(c => c.code === selectedCountry)?.states.map((state) => (
-              <TouchableOpacity
-                key={state}
-                style={[
-                  styles.stateButton,
-                  selectedState === state && styles.selectedButton,
-                ]}
-                onPress={() => setSelectedState(state)}
-              >
-                <Text style={[
-                  styles.buttonText,
-                  selectedState === state && styles.selectedButtonText
-                ]}>
-                  {state}
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#000" />
+        </View>
+      ) : (
+        <ScrollView style={styles.predictionsContainer}>
+          {predictions.map((prediction) => (
+            <TouchableOpacity
+              key={prediction.place_id}
+              style={styles.predictionItem}
+              onPress={() => getPlaceDetails(prediction.place_id)}
+            >
+              <View style={styles.predictionContent}>
+                <Text style={styles.mainText}>
+                  {prediction.structured_formatting.main_text}
                 </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                <Text style={styles.secondaryText}>
+                  {prediction.structured_formatting.secondary_text}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#666" />
+            </TouchableOpacity>
+          ))}
         </ScrollView>
-      </View>
-
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search Address"
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-      />
-
-      <FlatList
-        data={predictions}
-        keyExtractor={(item) => item.place_id}
-        renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => handleSelect(item)} style={styles.predictionItem}>
-            <Text>{item.description}</Text>
-          </TouchableOpacity>
-        )}
-        style={styles.predictionsList}
-      />
+      )}
     </View>
   );
 }
@@ -226,59 +231,84 @@ export default function AddressSearch() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
+  },
+  searchContainer: {
     padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
-  selectContainer: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 16,
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  buttonContainer: {
+  countrySelector: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    marginBottom: 12,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 4,
   },
   countryButton: {
-    paddingHorizontal: 16,
+    flex: 1,
     paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#f0f0f0',
-    marginRight: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: 'center',
   },
-  stateButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#f0f0f0',
-    marginRight: 8,
+  selectedCountry: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  selectedButton: {
-    backgroundColor: '#007AFF',
+  countryButtonText: {
+    fontSize: 14,
+    color: '#666666',
   },
-  buttonText: {
-    color: '#333',
+  selectedCountryText: {
+    color: '#000000',
+    fontWeight: '500',
   },
-  selectedButtonText: {
-    color: '#fff',
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    paddingHorizontal: 12,
   },
   searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     fontSize: 16,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    height: 50,
-    paddingHorizontal: 16,
-    marginTop: 16,
+    color: '#000000',
   },
-  predictionsList: {
-    marginTop: 8,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  predictionsContainer: {
+    flex: 1,
   },
   predictionItem: {
-    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
+    borderBottomColor: '#F0F0F0',
+  },
+  predictionContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  mainText: {
+    fontSize: 16,
+    color: '#000000',
+    marginBottom: 4,
+  },
+  secondaryText: {
+    fontSize: 14,
+    color: '#666666',
   },
 }); 

@@ -11,26 +11,10 @@ import {
 import { Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createOrder } from '@/services/orders';
-import { OrderItem, Location, OrderPricing, OrderInsurance, CreateOrderParams } from '@/types';
-
-interface ItemDetails {
-  category: string;
-  subcategory: string;
-  name: string;
-  weight: string;
-  quantity: string;
-  value: string;
-  imageUri?: string;
-  isFragile?: boolean;
-  requiresSpecialHandling?: boolean;
-  specialInstructions?: string;
-  dimensions: {
-    length: string;
-    width: string;
-    height: string;
-  };
-}
+import { OrderService } from '@/services/orders';
+import { OrderItem, Location, OrderPricing, OrderInsurance, CreateOrderParams, OrderDraft, ItemDetails } from '@/types';
+import { StorageService } from '@/services/storage';
+import { Timestamp } from 'firebase/firestore';
 
 interface ItemList {
   items: ItemDetails[];
@@ -40,33 +24,42 @@ interface ItemList {
 
 export default function CheckoutScreen() {
   const [itemList, setItemList] = useState<ItemList | null>(null);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'card' | 'transfer' | 'cash'>('card');
+  const [orderDraft, setOrderDraft] = useState<OrderDraft | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<{
+    type: 'card' | 'cash' | 'wallet';
+    details?: any;
+  }>({ type: 'card' });
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    loadItems();
+    loadOrderData();
   }, []);
 
-  const loadItems = async () => {
+  const loadOrderData = async () => {
     try {
-      const itemDetailsString = await AsyncStorage.getItem('itemDetails');
-      const pickupLocationString = await AsyncStorage.getItem('pickupLocation');
-      const deliveryLocationString = await AsyncStorage.getItem('deliveryLocation');
-      const pricingString = await AsyncStorage.getItem('pricing');
-
-      if (!itemDetailsString || !pickupLocationString || !deliveryLocationString || !pricingString) {
-        console.error('Missing required data:', {
-          hasItems: !!itemDetailsString,
-          hasPickup: !!pickupLocationString,
-          hasDelivery: !!deliveryLocationString,
-          hasPricing: !!pricingString
-        });
+      const orderDraftStr = await AsyncStorage.getItem('orderDraft');
+      if (!orderDraftStr) {
+        console.error('Order draft not found');
         return;
       }
 
-      const items: ItemDetails[] = JSON.parse(itemDetailsString);
-      const totalWeight = items.reduce((sum, item) => sum + (parseFloat(item.weight) * parseInt(item.quantity)), 0);
-      const totalValue = items.reduce((sum, item) => sum + (parseFloat(item.value) * parseInt(item.quantity)), 0);
+      const draft: OrderDraft = JSON.parse(orderDraftStr);
+      setOrderDraft(draft);
+      
+      // Check for required sections
+      if (!draft.delivery?.scheduledPickup || !draft.delivery?.vehicle ||
+          !draft.items?.length || !draft.locations?.pickup?.address ||
+          !draft.pricing?.itemValue || !draft.pricing?.deliveryFee) {
+        console.error('Missing required data');
+        return;
+      }
+
+      // Set item list with the loaded items
+      const items = draft.items;
+      const totalWeight = items.reduce((sum: number, item) => 
+        sum + (parseFloat(item.weight) * parseInt(item.quantity)), 0);
+      const totalValue = items.reduce((sum: number, item) => 
+        sum + (parseFloat(item.value) * parseInt(item.quantity)), 0);
 
       setItemList({
         items,
@@ -74,8 +67,8 @@ export default function CheckoutScreen() {
         totalValue
       });
     } catch (error) {
-      console.error('Error loading items:', error);
-      Alert.alert('Error', 'Failed to load items');
+      console.error('Error loading order data:', error);
+      Alert.alert('Error', 'Failed to load order data');
     }
   };
 
@@ -97,106 +90,94 @@ export default function CheckoutScreen() {
 
   const handleProceed = async () => {
     try {
-      // Load all required data from AsyncStorage
-      const [
-        itemDetailsString,
-        pickupLocationString,
-        deliveryLocationString,
-        pricingString,
-        insuranceString,
-        orderDetailsString,
-        senderDetailsString,
-        receiverDetailsString,
-        scheduledPickupString,
-        vehicleDetailsString,
-        deliveryPreferencesString,
-        rtoInformationString
-      ] = await Promise.all([
-        AsyncStorage.getItem('itemDetails'),
-        AsyncStorage.getItem('pickupLocation'),
-        AsyncStorage.getItem('deliveryLocation'),
-        AsyncStorage.getItem('pricing'),
-        AsyncStorage.getItem('insurance'),
-        AsyncStorage.getItem('orderDetails'),
-        AsyncStorage.getItem('senderDetails'),
-        AsyncStorage.getItem('receiverDetails'),
-        AsyncStorage.getItem('scheduledPickup'),
-        AsyncStorage.getItem('vehicleDetails'),
-        AsyncStorage.getItem('deliveryPreferences'),
-        AsyncStorage.getItem('rtoInformation')
-      ]);
-
-      // Check for required data
-      if (!itemDetailsString || !pickupLocationString || !deliveryLocationString || 
-          !pricingString || !orderDetailsString || !senderDetailsString || 
-          !receiverDetailsString || !scheduledPickupString || !vehicleDetailsString) {
-        Alert.alert('Error', 'Missing order information. Please complete all required details.');
+      const orderDraft = await StorageService.getOrderDraft();
+      if (!orderDraft) {
+        Alert.alert('Error', 'Order details not found');
         return;
       }
 
-      // Parse all the data
-      const itemDetails = JSON.parse(itemDetailsString);
-      const pickupLocation = JSON.parse(pickupLocationString) as Location;
-      const deliveryLocation = JSON.parse(deliveryLocationString) as Location;
-      const pricing = JSON.parse(pricingString) as OrderPricing;
-      const insurance = insuranceString ? JSON.parse(insuranceString) as OrderInsurance : undefined;
-      const orderDetails = JSON.parse(orderDetailsString);
-      const senderDetails = JSON.parse(senderDetailsString);
-      const receiverDetails = JSON.parse(receiverDetailsString);
-      const scheduledPickup = JSON.parse(scheduledPickupString);
-      const vehicleDetails = JSON.parse(vehicleDetailsString);
-      const deliveryPreferences = deliveryPreferencesString ? JSON.parse(deliveryPreferencesString) : undefined;
-      const rtoInformation = rtoInformationString ? JSON.parse(rtoInformationString) : undefined;
+      // Validate required fields with proper type checking
+      const missingFields: string[] = [];
 
-      // Map ItemDetails to OrderItem
-      const items: OrderItem[] = itemDetails.map((item: any, index: number) => ({
-        id: `temp-${index}`,
-        description: `${item.name} (${item.category} - ${item.subcategory})`,
-        quantity: parseInt(item.quantity),
-        weight: parseFloat(item.weight),
-        value: parseFloat(item.value),
+      if (!orderDraft.sender?.name) missingFields.push('Sender name');
+      if (!orderDraft.sender?.address) missingFields.push('Sender address');
+      if (!orderDraft.sender?.phone) missingFields.push('Sender phone');
+      if (!orderDraft.sender?.state) missingFields.push('Sender state');
+
+      if (!orderDraft.receiver?.name) missingFields.push('Receiver name');
+      if (!orderDraft.receiver?.address) missingFields.push('Receiver address');
+      if (!orderDraft.receiver?.phone) missingFields.push('Receiver phone');
+      if (!orderDraft.receiver?.state) missingFields.push('Receiver state');
+
+      if (!orderDraft.delivery?.scheduledPickup) missingFields.push('Pickup date');
+      if (!orderDraft.delivery?.vehicle) missingFields.push('Vehicle type');
+
+      if (!orderDraft.items || orderDraft.items.length === 0) {
+        missingFields.push('Item details');
+      }
+
+      if (!orderDraft.pricing?.itemValue || !orderDraft.pricing?.deliveryFee) {
+        missingFields.push('Pricing information');
+      }
+
+      if (missingFields.length > 0) {
+        Alert.alert(
+          'Missing Information',
+          `Please complete the following details:\n${missingFields.join('\n')}`,
+          [{ text: 'OK', onPress: () => router.back() }]
+        );
+        return;
+      }
+
+      // Map items to OrderItem type with proper type conversion
+      const items: OrderItem[] = (orderDraft.items || []).map((item) => ({
+        id: `temp-${Math.random().toString(36).substr(2, 9)}`,
+        name: item.name,
+        category: item.category,
+        subcategory: item.subcategory,
+        quantity: item.quantity,
+        weight: item.weight,
+        value: item.value,
         imageUrl: item.imageUri,
-        isFragile: item.isFragile,
-        requiresSpecialHandling: item.requiresSpecialHandling,
+        isFragile: item.isFragile || false,
+        requiresSpecialHandling: item.requiresSpecialHandling || false,
         specialInstructions: item.specialInstructions,
-        dimensions: item.dimensions ? {
-          length: parseFloat(item.dimensions.length),
-          width: parseFloat(item.dimensions.width),
-          height: parseFloat(item.dimensions.height),
-        } : undefined
+        dimensions: item.dimensions
       }));
 
-      // Create the complete order object
-      await createOrder({
+      // Format the pickup date
+      const pickupDate = orderDraft.delivery?.scheduledPickup ? new Date(orderDraft.delivery.scheduledPickup) : new Date();
+
+      // Create the complete order object with proper types
+      await OrderService.createOrder({
         items,
-        pickupLocation,
-        deliveryLocation,
-        pricing,
-        insurance,
-        sender: senderDetails,
-        receiver: receiverDetails,
-        scheduledPickup,
-        vehicle: vehicleDetails,
-        deliveryPreferences,
-        rtoInformation,
+        pickupLocation: orderDraft.locations?.pickup,
+        deliveryLocation: orderDraft.locations?.delivery,
+        pricing: {
+          basePrice: orderDraft.pricing?.deliveryFee,
+          total: orderDraft.pricing?.total
+        },
+        sender: {
+          name: orderDraft.sender?.name,
+          phone: orderDraft.sender?.phone,
+          address: orderDraft.sender?.address,
+          state: orderDraft.sender?.state
+        },
+        receiver: {
+          name: orderDraft.receiver?.name || '',
+          phone: orderDraft.receiver?.phone || '',
+          address: orderDraft.receiver?.address || '',
+          state: orderDraft.receiver?.state || ''
+        },
+        delivery: {
+          scheduledPickup: orderDraft.delivery?.scheduledPickup,
+          vehicle: orderDraft.delivery?.vehicle
+        },
         paymentMethod: selectedPaymentMethod
       });
 
-      // Clear all stored data
-      await AsyncStorage.multiRemove([
-        'itemDetails',
-        'pickupLocation',
-        'deliveryLocation',
-        'pricing',
-        'insurance',
-        'orderDetails',
-        'senderDetails',
-        'receiverDetails',
-        'scheduledPickup',
-        'vehicleDetails',
-        'deliveryPreferences',
-        'rtoInformation'
-      ]);
+      // Clear all order data
+      await StorageService.clearOrderData();
 
       router.push('/customer/order-success');
     } catch (error) {
@@ -205,7 +186,7 @@ export default function CheckoutScreen() {
     }
   };
 
-  if (!itemList) {
+  if (!itemList || !orderDraft) {
     return (
       <View style={styles.container}>
         <Stack.Screen
@@ -234,12 +215,79 @@ export default function CheckoutScreen() {
       />
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+        {/* Sender Details */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Sender Details</Text>
+          <View style={styles.detailsCard}>
+            <Text style={styles.detailsName}>{orderDraft.sender.name}</Text>
+            <Text style={styles.detailsText}>{orderDraft.sender.phone}</Text>
+            <Text style={styles.detailsText}>{orderDraft.sender.address}</Text>
+          </View>
+        </View>
+
+        {/* Receiver Details */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Receiver Details</Text>
+          <View style={styles.detailsCard}>
+            <Text style={styles.detailsName}>{orderDraft.receiver.name}</Text>
+            <Text style={styles.detailsText}>{orderDraft.receiver.phone}</Text>
+            <Text style={styles.detailsText}>{orderDraft.receiver.address}</Text>
+          </View>
+        </View>
+
+        {/* Delivery Details */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Delivery Details</Text>
+          <View style={styles.detailsCard}>
+            <View style={styles.detailsRow}>
+              <Text style={styles.detailsLabel}>Pickup Date:</Text>
+              <Text style={styles.detailsValue}>
+                {orderDraft.delivery?.scheduledPickup?.toDate().toLocaleDateString()}
+              </Text>
+            </View>
+            <View style={styles.detailsRow}>
+              <Text style={styles.detailsLabel}>Vehicle Type:</Text>
+              <Text style={styles.detailsValue}>{orderDraft.delivery.vehicle}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Items List */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Items ({itemList.items.length})</Text>
+          {itemList.items.map((item, index) => (
+            <View key={index} style={styles.itemCard}>
+              <Text style={styles.itemName}>{item.name}</Text>
+              <Text style={styles.itemDetails}>
+                {item.category} - {item.subcategory}
+              </Text>
+              <View style={styles.itemRow}>
+                <Text style={styles.itemLabel}>Quantity:</Text>
+                <Text style={styles.itemValue}>{item.quantity}</Text>
+              </View>
+              <View style={styles.itemRow}>
+                <Text style={styles.itemLabel}>Weight:</Text>
+                <Text style={styles.itemValue}>{item.weight}kg</Text>
+              </View>
+              <View style={styles.itemRow}>
+                <Text style={styles.itemLabel}>Value:</Text>
+                <Text style={styles.itemValue}>₦{parseFloat(item.value).toLocaleString()}</Text>
+              </View>
+              {item.specialInstructions && (
+                <Text style={styles.specialInstructions}>
+                  Note: {item.specialInstructions}
+                </Text>
+              )}
+            </View>
+          ))}
+        </View>
+
         {/* Order Summary */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Order Summary</Text>
           <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Items ({itemList.items.length})</Text>
+              <Text style={styles.summaryLabel}>Items Value</Text>
               <Text style={styles.summaryValue}>₦{itemList.totalValue.toLocaleString()}</Text>
             </View>
             <View style={styles.summaryRow}>
@@ -261,61 +309,61 @@ export default function CheckoutScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Payment Method</Text>
           <View style={styles.paymentOptions}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
                 styles.paymentOption,
-                selectedPaymentMethod === 'card' && styles.selectedPaymentOption
+                selectedPaymentMethod.type === 'card' && styles.selectedPaymentOption
               ]}
-              onPress={() => setSelectedPaymentMethod('card')}
+              onPress={() => setSelectedPaymentMethod({ type: 'card' })}
             >
               <Ionicons 
                 name="card-outline" 
                 size={24} 
-                color={selectedPaymentMethod === 'card' ? '#0066FF' : '#6B7280'} 
+                color={selectedPaymentMethod.type === 'card' ? '#0066FF' : '#6B7280'} 
               />
               <Text style={[
                 styles.paymentOptionText,
-                selectedPaymentMethod === 'card' && styles.selectedPaymentOptionText
+                selectedPaymentMethod.type === 'card' && styles.selectedPaymentOptionText
               ]}>
                 Card
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
                 styles.paymentOption,
-                selectedPaymentMethod === 'transfer' && styles.selectedPaymentOption
+                selectedPaymentMethod.type === 'wallet' && styles.selectedPaymentOption
               ]}
-              onPress={() => setSelectedPaymentMethod('transfer')}
+              onPress={() => setSelectedPaymentMethod({ type: 'wallet' })}
             >
               <Ionicons 
-                name="swap-horizontal-outline" 
+                name="wallet-outline" 
                 size={24} 
-                color={selectedPaymentMethod === 'transfer' ? '#0066FF' : '#6B7280'} 
+                color={selectedPaymentMethod.type === 'wallet' ? '#0066FF' : '#6B7280'} 
               />
               <Text style={[
                 styles.paymentOptionText,
-                selectedPaymentMethod === 'transfer' && styles.selectedPaymentOptionText
+                selectedPaymentMethod.type === 'wallet' && styles.selectedPaymentOptionText
               ]}>
-                Transfer
+                Wallet
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
                 styles.paymentOption,
-                selectedPaymentMethod === 'cash' && styles.selectedPaymentOption
+                selectedPaymentMethod.type === 'cash' && styles.selectedPaymentOption
               ]}
-              onPress={() => setSelectedPaymentMethod('cash')}
+              onPress={() => setSelectedPaymentMethod({ type: 'cash' })}
             >
               <Ionicons 
                 name="cash-outline" 
                 size={24} 
-                color={selectedPaymentMethod === 'cash' ? '#0066FF' : '#6B7280'} 
+                color={selectedPaymentMethod.type === 'cash' ? '#0066FF' : '#6B7280'} 
               />
               <Text style={[
                 styles.paymentOptionText,
-                selectedPaymentMethod === 'cash' && styles.selectedPaymentOptionText
+                selectedPaymentMethod.type === 'cash' && styles.selectedPaymentOptionText
               ]}>
                 Cash
               </Text>
@@ -324,15 +372,14 @@ export default function CheckoutScreen() {
         </View>
       </ScrollView>
 
-      {/* Proceed Button */}
+      {/* Pay Button */}
       <View style={styles.bottomContainer}>
-        <TouchableOpacity 
-          style={[styles.proceedButton, isLoading && styles.disabledButton]}
+        <TouchableOpacity
+          style={styles.payButton}
           onPress={handleProceed}
-          disabled={isLoading}
         >
-          <Text style={styles.proceedButtonText}>
-            {isLoading ? 'Processing...' : `Pay ₦${total.toLocaleString()}`}
+          <Text style={styles.payButtonText}>
+            Pay ₦{total.toLocaleString()}
           </Text>
         </TouchableOpacity>
       </View>
@@ -362,128 +409,172 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     letterSpacing: 0.2,
   },
+  detailsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  detailsName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  detailsText: {
+    fontSize: 14,
+    color: '#4B5563',
+    marginBottom: 2,
+  },
+  detailsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  detailsLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  detailsValue: {
+    fontSize: 14,
+    color: '#1A1A1A',
+    fontWeight: '500',
+  },
+  itemCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 12,
+  },
+  itemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  itemDetails: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 8,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  itemLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  itemValue: {
+    fontSize: 14,
+    color: '#1A1A1A',
+    fontWeight: '500',
+  },
+  specialInstructions: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontStyle: 'italic',
+    marginTop: 8,
+  },
   summaryCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   summaryLabel: {
     fontSize: 14,
     color: '#6B7280',
-    letterSpacing: 0.2,
   },
   summaryValue: {
     fontSize: 14,
     color: '#1A1A1A',
     fontWeight: '500',
-    letterSpacing: 0.2,
   },
   totalRow: {
     marginTop: 8,
-    paddingTop: 12,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
-    marginBottom: 0,
   },
   totalLabel: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     color: '#1A1A1A',
-    letterSpacing: 0.2,
   },
   totalValue: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    letterSpacing: 0.2,
+    fontWeight: '600',
+    color: '#0066FF',
   },
   paymentOptions: {
     flexDirection: 'row',
-    gap: 12,
+    justifyContent: 'space-between',
+    marginTop: 8,
   },
   paymentOption: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F9FAFB',
     borderRadius: 12,
     padding: 16,
-    alignItems: 'center',
+    marginHorizontal: 4,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   selectedPaymentOption: {
     backgroundColor: '#EBF5FF',
     borderColor: '#0066FF',
   },
   paymentOptionText: {
-    marginTop: 8,
+    marginLeft: 8,
     fontSize: 14,
     color: '#6B7280',
     fontWeight: '500',
-    letterSpacing: 0.2,
   },
   selectedPaymentOptionText: {
     color: '#0066FF',
-    fontWeight: '600',
   },
   bottomContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 16,
-    paddingBottom: Platform.OS === 'ios' ? 32 : 16,
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  proceedButton: {
-    backgroundColor: '#0066FF',
     padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  payButton: {
+    backgroundColor: '#0066FF',
     borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
-    shadowColor: '#0066FF',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  disabledButton: {
-    backgroundColor: '#D1D5DB',
-    shadowOpacity: 0,
-  },
-  proceedButtonText: {
+  payButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
-    letterSpacing: 0.2,
   },
   emptyState: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     padding: 16,
   },
   emptyStateText: {

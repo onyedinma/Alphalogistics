@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "LogisticsStaff",
+    "slug": "logisticsstaff",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/delivery_truck.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.Infotix.LogisticsStaff",
+      "versionCode": 1,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAl15M3EVjjYyJgswxGfbuf1po1CAZ9xX4"
+        }
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "description": ""
+  }
+}

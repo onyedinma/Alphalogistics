@@ -54,8 +54,8 @@ export default function OrderSuccessScreen() {
         <TouchableOpacity 
           style={styles.trackButton}
           onPress={() => {
-            // Navigate to tracking screen
-            router.push('/(dashboard)/customer/track-order');
+            // Navigate to active orders screen
+            router.push('/(dashboard)/customer/active-orders');
           }}
         >
           <Text style={styles.trackButtonText}>Track Order</Text>
