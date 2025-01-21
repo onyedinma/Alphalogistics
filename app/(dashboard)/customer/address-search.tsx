@@ -72,7 +72,7 @@ export default function AddressSearch() {
     try {
       setIsLoading(true);
       const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=formatted_address,address_components&key=${GOOGLE_MAPS_API_KEY}`
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=formatted_address,address_components,geometry&key=${GOOGLE_MAPS_API_KEY}`
       );
       const data = await response.json();
 
@@ -83,54 +83,89 @@ export default function AddressSearch() {
         let streetNumber = '';
         let route = '';
         let locality = '';
+        let sublocality = '';
         let city = '';
         let postalCode = '';
+        let landmark = '';
         
         // Extract all address components
         for (const component of addressComponents) {
           const types = component.types;
+          const value = component.long_name;
+          
           if (types.includes('street_number')) {
-            streetNumber = component.long_name;
-          } else if (types.includes('route')) {
-            route = component.long_name;
-          } else if (types.includes('sublocality') || types.includes('neighborhood')) {
-            locality = component.long_name;
-          } else if (types.includes('locality') || types.includes('administrative_area_level_2')) {
-            city = component.long_name;
-          } else if (types.includes('administrative_area_level_1')) {
-            state = component.long_name;
-          } else if (types.includes('country')) {
-            country = component.long_name;
-          } else if (types.includes('postal_code')) {
-            postalCode = component.long_name;
+            streetNumber = value;
+          }
+          if (types.includes('route')) {
+            route = value;
+          }
+          if (types.includes('sublocality_level_1') || types.includes('sublocality')) {
+            sublocality = value;
+          }
+          if (types.includes('locality')) {
+            city = value;
+          }
+          if (types.includes('administrative_area_level_2')) {
+            if (!city) city = value;
+          }
+          if (types.includes('administrative_area_level_1')) {
+            state = value;
+          }
+          if (types.includes('country')) {
+            country = value;
+          }
+          if (types.includes('postal_code')) {
+            postalCode = value;
+          }
+          if (types.includes('point_of_interest') || types.includes('establishment')) {
+            landmark = value;
+          }
+          if (types.includes('neighborhood') && !locality) {
+            locality = value;
           }
         }
 
-        // Combine street number and route for street address
+        // Build street address
         const streetAddress = [streetNumber, route].filter(Boolean).join(' ');
+        
+        // Set locality fallbacks
+        if (!locality) {
+          locality = sublocality || city || '';
+        }
 
-        // Navigate back based on returnTo parameter
-        if (params.returnTo === 'sender') {
-          router.push({
-            pathname: '/(dashboard)/customer/sender',
-            params: {
-              selectedAddress: data.result.formatted_address,
-              selectedState: state || 'Unknown State',
-              selectedCountry: country,
-            }
-          });
-        } else if (params.returnTo === 'receiver') {
+        // Ensure we have a city value
+        if (!city) {
+          city = locality || sublocality || '';
+        }
+
+        // Use Google's formatted address as fallback
+        const completeAddress = data.result.formatted_address;
+
+        if (params.returnTo === 'receiver') {
           router.push({
             pathname: '/(dashboard)/customer/receiver',
             params: {
-              selectedAddress: data.result.formatted_address,
-              selectedState: state || 'Unknown State',
-              selectedCountry: country,
-              selectedStreetNumber: streetAddress,
-              selectedLocality: locality,
-              selectedCity: city,
-              selectedPostalCode: postalCode,
-              showManualEntry: 'true' // To automatically show the manual entry fields
+              selectedAddress: completeAddress,
+              address: completeAddress,
+              selectedState: state || '',
+              selectedCountry: country || '',
+              selectedStreetNumber: streetAddress || '',
+              selectedLocality: locality || '',
+              selectedLandmark: landmark || '',
+              selectedCity: city || '',
+              selectedPostalCode: postalCode || '',
+              showManualEntry: 'true',
+              returnFromAddressSearch: 'true'
+            }
+          });
+        } else if (params.returnTo === 'sender') {
+          router.push({
+            pathname: '/(dashboard)/customer/sender',
+            params: {
+              selectedAddress: completeAddress,
+              address: completeAddress,
+              selectedState: state || '',
+              selectedCountry: country || ''
             }
           });
         }

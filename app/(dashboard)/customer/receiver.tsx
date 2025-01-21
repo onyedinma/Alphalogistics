@@ -55,6 +55,7 @@ export default function ReceiverDetails() {
     selectedCity?: string;
     selectedPostalCode?: string;
     showManualEntry?: string;
+    selectedLandmark?: string;
   }>();
 
   const [formData, setFormData] = useState<ContactDetails>({
@@ -81,18 +82,6 @@ export default function ReceiverDetails() {
   useEffect(() => {
     const loadSavedData = async () => {
       try {
-        // First check for params from navigation
-        if (params.name || params.address || params.phone) {
-          setFormData(prev => ({
-            ...prev,
-            name: params.name || prev.name,
-            address: params.address || prev.address,
-            phone: params.phone || prev.phone
-          }));
-          return; // Don't load from storage if we have params
-        }
-
-        // Otherwise load from storage
         const savedOrderDraft = await AsyncStorage.getItem('orderDraft');
         if (savedOrderDraft) {
           const parsedDraft = JSON.parse(savedOrderDraft);
@@ -102,6 +91,16 @@ export default function ReceiverDetails() {
               ...parsedDraft.receiver
             }));
           }
+        }
+
+        // After loading from storage, apply any params if they exist
+        if (params.name || params.address || params.phone) {
+          setFormData(prev => ({
+            ...prev,
+            name: params.name || prev.name,
+            address: params.address || prev.address,
+            phone: params.phone || prev.phone
+          }));
         }
       } catch (error) {
         console.error('Error loading saved data:', error);
@@ -134,69 +133,54 @@ export default function ReceiverDetails() {
     }
   }, [formData]);
 
-  // Handle data coming back from address search
+  // Handle address search results
   useEffect(() => {
-    if (params.returnFromAddressSearch === 'true' && params.address) {
-      // Split the address into parts
-      const addressParts = params.address.split(',').map(part => part.trim());
-      
-      // Find the postcode in the address parts (usually the last or second to last part)
-      let postcode = '';
-      let addressPartsWithoutPostcode = [...addressParts];
-      
-      // Check each part from the end for a postcode
-      for (let i = addressParts.length - 1; i >= 0; i--) {
-        const part = addressParts[i];
-        const postcodeMatch = part.match(/\b\d{5,6}\b/);
-        if (postcodeMatch) {
-          postcode = postcodeMatch[0];
-          // Remove the postcode part from the address parts
-          addressPartsWithoutPostcode.splice(i, 1);
-          break;
-        }
-      }
+    if (params.returnFromAddressSearch === 'true' || params.selectedAddress) {
+      // Show manual entry form
+      setShowManualEntry(true);
 
-      setFormData(prev => ({
-        ...prev,
-        deliveryMethod: 'delivery',
-        address: params.address || prev.address,
-        streetNumber: addressPartsWithoutPostcode[0] || prev.streetNumber,
-        locality: addressPartsWithoutPostcode[1] || prev.locality,
-        city: addressPartsWithoutPostcode[2] || prev.city,
-        state: addressPartsWithoutPostcode[3] || prev.state,
-        pincode: postcode || prev.pincode
-      }));
-    }
-  }, [params.returnFromAddressSearch, params.address]);
+      // Get current form data first
+      setFormData(prev => {
+        // Preserve all existing data
+        const updatedData: ContactDetails = {
+          ...prev,
+          deliveryMethod: 'delivery' as const,
+          // Keep existing name and phone
+          name: prev.name,
+          phone: prev.phone,
+          // Update address fields
+          address: params.address || params.selectedAddress || prev.address,
+          streetNumber: params.selectedStreetNumber || prev.streetNumber,
+          landmark: params.selectedLandmark || prev.landmark,
+          locality: params.selectedLocality || prev.locality,
+          city: params.selectedCity || prev.city,
+          state: params.selectedState || prev.state,
+          pincode: params.selectedPostalCode || prev.pincode,
+          // Keep other fields
+          pickupCenter: prev.pickupCenter,
+          specialInstructions: prev.specialInstructions
+        };
 
-  useEffect(() => {
-    if (params.selectedAddress || params.selectedState || params.selectedCountry) {
-      setFormData(prev => ({
-        ...prev,
-        address: params.selectedAddress || prev.address,
-        state: params.selectedState || prev.state,
-        streetNumber: params.selectedStreetNumber || prev.streetNumber,
-        locality: params.selectedLocality || prev.locality,
-        city: params.selectedCity || prev.city,
-        pincode: params.selectedPostalCode || prev.pincode,
-        deliveryMethod: 'delivery'
-      }));
-
-      // Show manual entry if specified
-      if (params.showManualEntry === 'true') {
-        setShowManualEntry(true);
-      }
+        // Log the updated data for debugging
+        console.log('Updated form data:', updatedData);
+        return updatedData;
+      });
 
       // Clear any existing errors
-      setFormErrors(prev => ({
-        ...prev,
-        address: undefined,
-        state: undefined
-      }));
+      setFormErrors({});
     }
-  }, [params.selectedAddress, params.selectedState, params.selectedCountry, 
-    params.selectedStreetNumber, params.selectedLocality, params.selectedCity, 
-    params.selectedPostalCode]);
+  }, [
+    params.returnFromAddressSearch,
+    params.selectedAddress,
+    params.address,
+    params.selectedStreetNumber,
+    params.selectedLandmark,
+    params.selectedLocality,
+    params.selectedCity,
+    params.selectedState,
+    params.selectedPostalCode,
+    params.selectedCountry
+  ]);
 
   const validatePhoneNumber = (phoneNumber: string): boolean => {
     // Remove all non-digit characters
