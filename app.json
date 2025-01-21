@@ -48,6 +48,12 @@
           "photosPermission": "The app needs access to your photos to let you share them.",
           "cameraPermission": "The app needs access to your camera to let you take photos."
         }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow Alphalogistics to access your contacts to select receivers for delivery."
+        }
       ]
     ],
     "experiments": {

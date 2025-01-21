@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert, Text } from 'react-native';
+import { View, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert, Text, Linking } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import PhoneInput, { ICountry } from 'react-native-international-phone-number';
@@ -351,43 +351,125 @@ export default function ReceiverDetails() {
 
   const handleSelectContact = async () => {
     try {
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status === 'granted') {
-        const { data } = await Contacts.getContactsAsync({
-          fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
-        });
-
-        if (data.length > 0) {
-          // Filter contacts with phone numbers and ensure number exists
-          const contactsWithPhone = data.filter(contact => 
-            contact.phoneNumbers?.length && contact.phoneNumbers[0].number
-          );
-
-          if (contactsWithPhone.length > 0) {
-            const contact = contactsWithPhone[0];
-            const phoneNumber = contact.phoneNumbers![0].number || '';
-            const name = contact.name || '';
-
-            setFormData(prev => ({
-              ...prev,
-              name,
-              phone: phoneNumber.replace(/[^\d+]/g, ''),
-            }));
-
-            setFormErrors(prev => {
-              const { phone, ...rest } = prev;
-              return rest;
-            });
-          }
-        } else {
-          Alert.alert('No Contacts Found', 'No contacts were found on your device.');
-        }
-      } else {
-        Alert.alert('Permission Required', 'Please grant access to your contacts to use this feature.');
+      // Check current permission status first
+      const { status: existingStatus } = await Contacts.getPermissionsAsync();
+      
+      if (existingStatus === 'denied') {
+        Alert.alert(
+          'Permission Required',
+          'This app needs access to contacts to select a receiver. Please enable it in your phone settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Open Settings',
+              onPress: () => Linking.openSettings()
+            }
+          ]
+        );
+        return;
       }
+
+      // Request permission if not already granted
+      const { status } = await Contacts.requestPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Denied',
+          'Cannot access contacts without permission. Please enable contacts access in your phone settings to use this feature.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Open Settings',
+              onPress: () => Linking.openSettings()
+            }
+          ]
+        );
+        return;
+      }
+
+      // Get all contacts
+      const { data } = await Contacts.getContactsAsync({
+        fields: [
+          Contacts.Fields.Name,
+          Contacts.Fields.PhoneNumbers,
+          Contacts.Fields.Addresses,
+        ],
+      });
+
+      if (data.length === 0) {
+        Alert.alert('No Contacts', 'No contacts found on your device');
+        return;
+      }
+
+      // Present contact picker UI
+      Alert.alert(
+        'Select Contact',
+        'Choose how you want to select a contact:',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Select First Contact',
+            onPress: () => {
+              const contact = data[0];
+              updateFormWithContact(contact);
+            }
+          },
+          {
+            text: 'View All Contacts',
+            onPress: () => {
+              // Here you would typically show a modal with all contacts
+              // For now, we'll just use the first contact as a placeholder
+              const contact = data[0];
+              updateFormWithContact(contact);
+            }
+          }
+        ]
+      );
+
     } catch (error) {
       console.error('Error accessing contacts:', error);
-      Alert.alert('Error', 'Failed to access contacts. Please try again.');
+      Alert.alert(
+        'Error',
+        'Failed to access contacts. Please try again later.'
+      );
+    }
+  };
+
+  const updateFormWithContact = (contact: Contacts.Contact) => {
+    // Format address from components if available
+    let formattedAddress = '';
+    if (contact.addresses?.[0]) {
+      const addr = contact.addresses[0];
+      formattedAddress = [
+        addr.street,
+        addr.city,
+        addr.region,
+        addr.postalCode,
+        addr.country
+      ].filter(Boolean).join(', ');
+    }
+
+    // Update form with contact data
+    setFormData(prev => ({
+      ...prev,
+      name: contact.name || prev.name,
+      phone: contact.phoneNumbers?.[0]?.number?.replace(/\D/g, '') || prev.phone,
+      // If contact has address, update address fields
+      ...(contact.addresses?.[0] && {
+        address: formattedAddress,
+        streetNumber: contact.addresses[0].street || '',
+        city: contact.addresses[0].city || '',
+        state: contact.addresses[0].region || '',
+        pincode: contact.addresses[0].postalCode || '',
+      })
+    }));
+
+    // Show manual entry if address is available
+    if (contact.addresses?.[0]) {
+      setShowManualEntry(true);
     }
   };
 
@@ -407,6 +489,15 @@ export default function ReceiverDetails() {
             <Text style={styles.moreReceiversLink}>More Receivers</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Contact Selection Button */}
+        <TouchableOpacity
+          style={styles.contactButton}
+          onPress={handleSelectContact}
+        >
+          <Ionicons name="people-outline" size={24} color="#007AFF" />
+          <Text style={styles.contactButtonText}>Select from Contacts</Text>
+        </TouchableOpacity>
 
         <View style={styles.infoBox}>
           <Ionicons name="information-circle-outline" size={20} color="#666" />
@@ -590,12 +681,6 @@ export default function ReceiverDetails() {
                 input: styles.phoneInput
               }}
             />
-            <TouchableOpacity 
-              style={styles.contactButton}
-              onPress={handleSelectContact}
-            >
-              <Ionicons name="people" size={24} color="#666" />
-            </TouchableOpacity>
           </View>
           {formErrors.phone && (
             <Text style={styles.errorText}>{formErrors.phone}</Text>
@@ -736,12 +821,20 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   contactButton: {
-    marginLeft: 8,
-    padding: 8,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#F0F8FF',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+  },
+  contactButtonText: {
+    marginLeft: 8,
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '500',
   },
   proceedButton: {
     margin: 16,
