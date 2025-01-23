@@ -135,36 +135,30 @@ export default function ReceiverDetails() {
 
   // Handle address search results
   useEffect(() => {
-    if (params.returnFromAddressSearch === 'true' || params.selectedAddress) {
-      // Show manual entry form
+    if (params.returnFromAddressSearch === 'true' && params.selectedAddress) {
+      // Show manual entry form automatically when address is selected
       setShowManualEntry(true);
 
-      // Get current form data first
-      setFormData(prev => {
-        // Preserve all existing data
-        const updatedData: ContactDetails = {
-          ...prev,
-          deliveryMethod: 'delivery' as const,
-          // Keep existing name and phone
-          name: prev.name,
-          phone: prev.phone,
-          // Update address fields
-          address: params.address || params.selectedAddress || prev.address,
-          streetNumber: params.selectedStreetNumber || prev.streetNumber,
-          landmark: params.selectedLandmark || prev.landmark,
-          locality: params.selectedLocality || prev.locality,
-          city: params.selectedCity || prev.city,
-          state: params.selectedState || prev.state,
-          pincode: params.selectedPostalCode || prev.pincode,
-          // Keep other fields
-          pickupCenter: prev.pickupCenter,
-          specialInstructions: prev.specialInstructions
-        };
-
-        // Log the updated data for debugging
-        console.log('Updated form data:', updatedData);
-        return updatedData;
-      });
+      // Update form data with all address fields
+      setFormData(prev => ({
+        ...prev,
+        deliveryMethod: 'delivery' as const,
+        // Keep existing name and phone
+        name: prev.name,
+        phone: prev.phone,
+        // Update main address field and ensure no undefined values
+        address: params.selectedAddress || '',
+        // Update all manual address fields with the components
+        streetNumber: params.selectedStreetNumber || '',
+        landmark: params.selectedLandmark || '',
+        locality: params.selectedLocality || '',
+        city: params.selectedCity || '',
+        state: params.selectedState || '',
+        pincode: params.selectedPostalCode || '',
+        // Clear pickup center since we're in delivery mode
+        pickupCenter: '',
+        specialInstructions: prev.specialInstructions || ''
+      }));
 
       // Clear any existing errors
       setFormErrors({});
@@ -172,14 +166,12 @@ export default function ReceiverDetails() {
   }, [
     params.returnFromAddressSearch,
     params.selectedAddress,
-    params.address,
     params.selectedStreetNumber,
     params.selectedLandmark,
     params.selectedLocality,
     params.selectedCity,
     params.selectedState,
-    params.selectedPostalCode,
-    params.selectedCountry
+    params.selectedPostalCode
   ]);
 
   const validatePhoneNumber = (phoneNumber: string): boolean => {
