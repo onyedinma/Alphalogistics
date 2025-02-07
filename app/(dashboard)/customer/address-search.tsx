@@ -163,9 +163,9 @@ export default function AddressSearch() {
             pathname: '/(dashboard)/customer/sender',
             params: {
               selectedAddress: completeAddress,
-              address: completeAddress,
               selectedState: state || '',
-              selectedCountry: country || ''
+              selectedCountry: country || '',
+              returnFromAddressSearch: 'true'
             }
           });
         }

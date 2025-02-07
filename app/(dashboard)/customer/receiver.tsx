@@ -5,34 +5,20 @@ import { Ionicons } from '@expo/vector-icons';
 import PhoneInput, { ICountry } from 'react-native-international-phone-number';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Contacts from 'expo-contacts';
+import { StorageService } from '@/services/storage';
+import type { OrderDraft, Location } from './types';
 
 // Add constants at the top of the file
 const CONTACTS_PER_PAGE = 20;
 
 interface ContactDetails {
   name: string;
-  streetNumber: string;
-  landmark: string;
-  locality: string;
-  city: string;
-  state: string;
-  pincode: string;
-  address: string;
   phone: string;
+  address: string;
+  state: string;
   deliveryMethod: 'pickup' | 'delivery';
   pickupCenter?: string;
   specialInstructions?: string;
-}
-
-interface OrderDraft {
-  receiver?: ContactDetails;
-  sender?: {
-    name: string;
-    address: string;
-    phone: string;
-  };
-  selectedVehicle?: string;
-  pickupDate?: string;
 }
 
 interface FormErrors {
@@ -44,42 +30,38 @@ interface EnhancedContact extends Contacts.Contact {
   searchableText?: string;
 }
 
+interface FormData {
+  name: string;
+  address: string;
+  state: string;
+  phone: string;
+  deliveryMethod: 'pickup' | 'delivery';
+  pickupCenter?: string;
+}
+
+interface RouteParams {
+  name?: string;
+  address?: string;
+  phone?: string;
+  state?: string;
+  returnFromAddressSearch?: string;
+  selectedAddress?: string;
+  selectedState?: string;
+  selectedCountry?: string;
+  showManualEntry?: string;
+}
+
 export default function ReceiverDetails() {
-  const params = useLocalSearchParams<{
-    name?: string;
-    address?: string;
-    phone?: string;
-    senderName?: string;
-    senderAddress?: string;
-    senderPhone?: string;
-    selectedVehicle?: string;
-    pickupDate?: string;
-    returnFromAddressSearch?: string;
-    selectedAddress?: string;
-    selectedState?: string;
-    selectedCountry?: string;
-    selectedStreetNumber?: string;
-    selectedLocality?: string;
-    selectedCity?: string;
-    selectedPostalCode?: string;
-    showManualEntry?: string;
-    selectedLandmark?: string;
-  }>();
+  const params = useLocalSearchParams<RouteParams>();
 
   // State hooks
-  const [formData, setFormData] = useState<ContactDetails>({
+  const [formData, setFormData] = useState<FormData>({
     name: '',
-    streetNumber: '',
-    landmark: '',
-    locality: '',
-    city: '',
-    state: '',
-    pincode: '',
     address: '',
+    state: '',
     phone: '',
-    deliveryMethod: 'pickup',
-    pickupCenter: '',
-    specialInstructions: ''
+    deliveryMethod: 'delivery',
+    pickupCenter: ''
   });
   const [selectedCountry, setSelectedCountry] = useState<ICountry | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -208,69 +190,28 @@ export default function ReceiverDetails() {
   // Modify the address search results handler
   useEffect(() => {
     if (params.returnFromAddressSearch === 'true' && params.selectedAddress) {
-      // Reset form data with new address data, preserving only name and phone
-      setFormData({
-        name: formData.name,
-        phone: formData.phone,
-        deliveryMethod: 'delivery',
-        // Set new address data
-        address: params.selectedAddress || '',
-        streetNumber: params.selectedStreetNumber || '',
-        landmark: params.selectedLandmark || '',
-        locality: params.selectedLocality || '',
-        city: params.selectedCity || '',
-        state: params.selectedState || '',
-        pincode: params.selectedPostalCode || '',
-        // Clear other fields
-        pickupCenter: '',
-        specialInstructions: ''
-      });
-
-      // Show manual entry and clear errors
-      setShowManualEntry(true);
-      setFormErrors({});
-
-      // Update AsyncStorage with new data
-      const updateStorage = async () => {
+      const loadTempData = async () => {
         try {
-          const savedOrderDraft = await AsyncStorage.getItem('orderDraft');
-          const currentDraft = savedOrderDraft ? JSON.parse(savedOrderDraft) : {};
+          const tempData = await AsyncStorage.getItem('tempSenderData');
+          const parsedTempData = tempData ? JSON.parse(tempData) : {};
           
-          await AsyncStorage.setItem('orderDraft', JSON.stringify({
-            ...currentDraft,
-            receiver: {
-              name: formData.name,
-              phone: formData.phone,
-              deliveryMethod: 'delivery',
-              address: params.selectedAddress || '',
-              streetNumber: params.selectedStreetNumber || '',
-              landmark: params.selectedLandmark || '',
-              locality: params.selectedLocality || '',
-              city: params.selectedCity || '',
-              state: params.selectedState || '',
-              pincode: params.selectedPostalCode || '',
-              pickupCenter: '',
-              specialInstructions: ''
-            }
+          setFormData(prev => ({
+            ...prev,
+            address: params.selectedAddress || '',
+            state: params.selectedState || prev.state
           }));
+          
+          setFormErrors(prev => ({ ...prev, address: undefined, state: undefined }));
+          
+          await AsyncStorage.removeItem('tempSenderData');
         } catch (error) {
-          console.error('Error updating storage:', error);
+          console.error('Error loading temp data:', error);
         }
       };
-      updateStorage();
+      
+      loadTempData();
     }
-  }, [
-    params.returnFromAddressSearch,
-    params.selectedAddress,
-    params.selectedStreetNumber,
-    params.selectedLandmark,
-    params.selectedLocality,
-    params.selectedCity,
-    params.selectedState,
-    params.selectedPostalCode,
-    formData.name,
-    formData.phone
-  ]);
+  }, [params.returnFromAddressSearch, params.selectedAddress, params.selectedState]);
 
   // Add a separate useEffect to handle showing manual entry
   useEffect(() => {
@@ -290,13 +231,7 @@ export default function ReceiverDetails() {
             setFormData(prev => ({
               ...prev,
               ...parsedDraft.receiver,
-              // Ensure all fields are populated
-              streetNumber: parsedDraft.receiver.streetNumber || prev.streetNumber,
-              landmark: parsedDraft.receiver.landmark || prev.landmark,
-              locality: parsedDraft.receiver.locality || prev.locality,
-              city: parsedDraft.receiver.city || prev.city,
-              state: parsedDraft.receiver.state || prev.state,
-              pincode: parsedDraft.receiver.pincode || prev.pincode
+              pickupCenter: parsedDraft.receiver.pickupCenter || prev.pickupCenter
             }));
 
             // Show manual entry if address exists
@@ -379,34 +314,22 @@ export default function ReceiverDetails() {
 
   // Validate form data
   const validateForm = () => {
-    const errors: { [key: string]: string } = {};
+    const errors: FormErrors = {};
 
-    // Name validation
     if (!formData.name.trim()) {
-      errors.name = 'Name is required';
+      errors.name = 'Please enter the receiver\'s name';
     }
 
-    // Phone validation with more strict format
-    if (!formData.phone.trim()) {
-      errors.phone = 'Phone number is required';
-    } else if (!/^[0-9]{10,11}$/.test(formData.phone.replace(/\s+/g, ''))) {
-      errors.phone = 'Phone number must be 10-11 digits';
+    if (!formData.address.trim()) {
+      errors.address = 'Please enter the receiver\'s address';
     }
 
-    // Address validation based on delivery method
-    if (formData.deliveryMethod === 'delivery') {
-      if (!formData.address.trim()) {
-        errors.address = 'Address is required';
-      }
-    } else {
-      if (!formData.pickupCenter) {
-        errors.pickupCenter = 'Pickup center is required';
-      }
-    }
-
-    // State validation
     if (!formData.state.trim()) {
-      errors.state = 'State is required';
+      errors.state = 'Please select a state';
+    }
+
+    if (!formData.phone.trim()) {
+      errors.phone = 'Please enter a phone number';
     }
 
     setFormErrors(errors);
@@ -415,58 +338,32 @@ export default function ReceiverDetails() {
 
   // Update handleProceed to use validation
   const handleProceed = async () => {
-    if (!validateForm()) {
-      Alert.alert('Validation Error', Object.values(formErrors).join('\n'));
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsLoading(true);
     try {
-      const orderDraft = await AsyncStorage.getItem('orderDraft');
-      const currentDraft = orderDraft ? JSON.parse(orderDraft) : {};
-      
-      const receiverData = {
-        name: formData.name.trim(),
-        address: (formData.deliveryMethod === 'delivery' ? formData.address : formData.pickupCenter || '').trim(),
-        phone: formData.phone.replace(/\s+/g, '').trim(),
-        state: formData.state.trim(),
-        deliveryMethod: formData.deliveryMethod,
-        pickupCenter: formData.deliveryMethod === 'pickup' ? formData.pickupCenter : undefined
+      const currentDraft = await StorageService.getOrderDraft();
+      if (!currentDraft) {
+        throw new Error('No order draft found');
+      }
+
+      const updatedDraft: OrderDraft = {
+        ...currentDraft,
+        receiver: {
+          name: formData.name.trim(),
+          address: formData.address.trim(),
+          phone: formData.phone.trim(),
+          state: formData.state.trim(),
+          deliveryMethod: formData.deliveryMethod,
+          pickupCenter: formData.deliveryMethod === 'pickup' ? formData.pickupCenter : undefined
+        }
       };
 
-      await AsyncStorage.setItem('orderDraft', JSON.stringify({
-        ...currentDraft,
-        receiver: receiverData,
-        locations: {
-          ...currentDraft.locations,
-          delivery: {
-            address: receiverData.address,
-            state: receiverData.state
-          }
-        }
-      }));
-
-      router.replace({
-        pathname: '/(dashboard)/customer/new-order',
-        params: {
-          receiverName: receiverData.name,
-          receiverAddress: receiverData.address,
-          receiverPhone: receiverData.phone,
-          receiverDeliveryMethod: receiverData.deliveryMethod,
-          // Preserve sender details if they exist
-          ...(params.senderName && {
-            senderName: params.senderName,
-            senderAddress: params.senderAddress,
-            senderPhone: params.senderPhone
-          }),
-          // Preserve vehicle and date if they exist
-          ...(params.selectedVehicle && { selectedVehicle: params.selectedVehicle }),
-          ...(params.pickupDate && { pickupDate: params.pickupDate })
-        }
-      });
+      await StorageService.saveOrderDraft(updatedDraft);
+      router.push('/customer/item-details');
     } catch (error) {
       console.error('Error saving receiver details:', error);
-      Alert.alert('Error', 'Failed to save receiver details');
+      Alert.alert('Error', 'Failed to save receiver details. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -550,25 +447,16 @@ export default function ReceiverDetails() {
         const addr = contact.addresses[0];
         const formattedAddress = [
           addr.street,
-          addr.city,
           addr.region,
-          addr.postalCode,
           addr.country
         ].filter(Boolean).join(', ');
 
         updatedForm.address = formattedAddress;
-        updatedForm.streetNumber = addr.street || '';
-        updatedForm.city = addr.city || '';
         updatedForm.state = addr.region || '';
-        updatedForm.pincode = addr.postalCode || '';
-        setShowManualEntry(true);
       } else if (prev.deliveryMethod === 'pickup') {
         // Keep pickup center and clear address fields
         updatedForm.address = '';
-        updatedForm.streetNumber = '';
-        updatedForm.city = '';
         updatedForm.state = prev.state; // Preserve state
-        updatedForm.pincode = '';
         updatedForm.pickupCenter = prev.pickupCenter || '';
       }
 
@@ -591,6 +479,29 @@ export default function ReceiverDetails() {
   const handleSearchQueryChange = debounce((query: string) => {
     setSearchQuery(query);
   }, 300);
+
+  // Initial data loading
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        const orderDraft = await StorageService.getOrderDraft();
+        const receiver = orderDraft?.receiver;
+        if (receiver) {
+          setFormData({
+            name: receiver.name,
+            phone: receiver.phone,
+            address: receiver.address,
+            state: receiver.state,
+            deliveryMethod: receiver.deliveryMethod,
+            pickupCenter: receiver.pickupCenter || ''
+          });
+        }
+      } catch (error) {
+        console.error('Error loading initial data:', error);
+      }
+    };
+    loadInitialData();
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -658,122 +569,53 @@ export default function ReceiverDetails() {
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Receiver's Name</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, formErrors.name && styles.inputError]}
             value={formData.name}
-            onChangeText={(text) => setFormData(prev => ({ ...prev, name: text }))}
-            placeholder="Enter Receivers Name"
+            onChangeText={(name) => {
+              setFormData(prev => ({ ...prev, name }));
+              setFormErrors(prev => ({ ...prev, name: undefined }));
+            }}
+            placeholder="Enter Receiver's Name"
             placeholderTextColor="#999"
           />
+          {formErrors.name && (
+            <Text style={styles.errorText}>{formErrors.name}</Text>
+          )}
         </View>
 
-        {formData.deliveryMethod === 'delivery' ? (
-          <>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Address</Text>
-              <TouchableOpacity 
-                style={[styles.addressInput, formErrors.address && styles.inputError]} 
-                onPress={handleAddressSearch}
-              >
-                <Text style={[
-                  styles.addressText,
-                  !formData.address && styles.placeholderText
-                ]}>
-                  {formData.address || 'Search for address'}
-                </Text>
-                <Ionicons name="search-outline" size={20} color="#4A90E2" />
-              </TouchableOpacity>
-              {formErrors.address && (
-                <Text style={styles.errorText}>{formErrors.address}</Text>
-              )}
-            </View>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Address</Text>
+          <TextInput
+            style={[styles.input, formErrors.address && styles.inputError]}
+            value={formData.address}
+            onChangeText={(address) => {
+              setFormData(prev => ({ ...prev, address }));
+              setFormErrors(prev => ({ ...prev, address: undefined }));
+            }}
+            placeholder="Enter Address"
+            placeholderTextColor="#999"
+          />
+          {formErrors.address && (
+            <Text style={styles.errorText}>{formErrors.address}</Text>
+          )}
+        </View>
 
-            <TouchableOpacity 
-              style={styles.manualEntryButton}
-              onPress={() => setShowManualEntry(!showManualEntry)}
-            >
-              <Ionicons 
-                name={showManualEntry ? "create" : "create-outline"} 
-                size={20} 
-                color="#4A90E2" 
-              />
-              <Text style={styles.manualEntryText}>
-                {showManualEntry ? 'Hide Manual Entry' : 'Enter Address Manually'}
-              </Text>
-            </TouchableOpacity>
-
-            {showManualEntry && (
-              <>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Street/Door Number</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={formData.streetNumber}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, streetNumber: text }))}
-                    placeholder="Enter Street/Door Number"
-                    placeholderTextColor="#999"
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Landmark (Optional)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={formData.landmark}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, landmark: text }))}
-                    placeholder="Enter Nearby Landmark"
-                    placeholderTextColor="#999"
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Locality</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={formData.locality}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, locality: text }))}
-                    placeholder="Enter Locality"
-                    placeholderTextColor="#999"
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>City</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={formData.city}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, city: text }))}
-                    placeholder="Enter City"
-                    placeholderTextColor="#999"
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Postcode</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={formData.pincode}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, pincode: text }))}
-                    placeholder="Enter Postcode"
-                    placeholderTextColor="#999"
-                    keyboardType="numeric"
-                    maxLength={6}
-                  />
-                </View>
-              </>
-            )}
-          </>
-        ) : (
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Pickup Center</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.pickupCenter}
-              onChangeText={(text) => setFormData(prev => ({ ...prev, pickupCenter: text }))}
-              placeholder="Enter Pickup Center"
-              placeholderTextColor="#999"
-            />
-          </View>
-        )}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>State</Text>
+          <TextInput
+            style={[styles.input, formErrors.state && styles.inputError]}
+            value={formData.state}
+            onChangeText={(state) => {
+              setFormData(prev => ({ ...prev, state }));
+              setFormErrors(prev => ({ ...prev, state: undefined }));
+            }}
+            placeholder="Enter State"
+            placeholderTextColor="#999"
+          />
+          {formErrors.state && (
+            <Text style={styles.errorText}>{formErrors.state}</Text>
+          )}
+        </View>
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Phone Number</Text>
@@ -802,13 +644,25 @@ export default function ReceiverDetails() {
             <Text style={styles.errorText}>{formErrors.phone}</Text>
           )}
         </View>
+
+        {formData.deliveryMethod === 'pickup' && (
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Pickup Center</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.pickupCenter}
+              onChangeText={(pickupCenter) => {
+                setFormData(prev => ({ ...prev, pickupCenter }));
+              }}
+              placeholder="Enter Pickup Center"
+              placeholderTextColor="#999"
+            />
+          </View>
+        )}
       </ScrollView>
 
-      <TouchableOpacity 
-        style={[
-          styles.proceedButton,
-          isLoading && styles.disabledButton
-        ]} 
+      <TouchableOpacity
+        style={[styles.proceedButton, isLoading && styles.disabledButton]}
         onPress={handleProceed}
         disabled={isLoading}
       >

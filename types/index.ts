@@ -9,37 +9,6 @@ export interface User {
   createdAt: Date;
 }
 
-export interface CreateOrderParams {
-  items: OrderItem[];
-  pickupLocation: Location;
-  deliveryLocation: Location;
-  pricing: OrderPricing;
-  insurance?: OrderInsurance;
-  sender: ContactDetails;
-  receiver: ContactDetails;
-  scheduledPickup: string | Date;
-  vehicle: {
-    type: string;
-    maxWeight?: number;
-  };
-  deliveryPreferences?: {
-    timeSlots: string[];
-    leaveWithNeighbor: boolean;
-    leaveAtDoor: boolean;
-    specialInstructions?: string;
-  };
-  rtoInformation?: {
-    acceptCharges: boolean;
-    acknowledgePolicy: boolean;
-    alternateContact?: string;
-    alternatePhone?: string;
-  };
-  paymentMethod?: {
-    type: 'card' | 'cash' | 'wallet';
-    details?: any;
-  };
-}
-
 export interface OrderItem {
   id: string;
   name: string;
@@ -59,18 +28,115 @@ export interface OrderItem {
   specialInstructions?: string;
 }
 
+export interface ItemDetails {
+  category: string;
+  subcategory: string;
+  name: string;
+  weight: string;
+  quantity: string;
+  value: string;
+  imageUri?: string;
+  isFragile?: boolean;
+  requiresSpecialHandling?: boolean;
+  specialInstructions?: string;
+  dimensions?: {
+    length: string;
+    width: string;
+    height: string;
+  };
+}
+
+export interface Location {
+  address: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  coordinates?: {
+    latitude: number;
+    longitude: number;
+  };
+  instructions?: string;
+}
+
+export interface ContactDetails {
+  name: string;
+  phone: string;
+  address: string;
+  state: string;
+  deliveryMethod: 'pickup' | 'delivery';
+  pickupCenter?: string;
+  specialInstructions?: string;
+}
+
+export interface OrderDraft {
+  sender: {
+    name: string;
+    address: string;
+    phone: string;
+    state: string;
+  };
+  receiver: {
+    name: string;
+    address: string;
+    phone: string;
+    state: string;
+    deliveryMethod: 'pickup' | 'delivery';
+    pickupCenter?: string;
+  };
+  delivery: {
+    scheduledPickup: string;
+    vehicle: string;
+    fee: number;
+  };
+  locations: {
+    pickup: Location;
+    delivery: Location;
+  };
+  items: ItemDetails[];
+  pricing: {
+    itemValue: number;
+    deliveryFee: number;
+    total: number;
+  };
+  orderDetails?: {
+    status: 'draft';
+    createdAt: string;
+    updatedAt: string;
+  };
+}
+
+export interface OrderPricing {
+  basePrice: number;
+  distancePrice?: number;
+  weightPrice?: number;
+  insurancePrice?: number;
+  total: number;
+}
+
 export interface OrderInsurance {
   type: 'basic' | 'premium';
   coverage: number;
   cost: number;
 }
 
-export interface OrderPricing {
-  basePrice: number;
-  distancePrice: number;
-  weightPrice: number;
-  insurancePrice?: number;
-  total: number;
+export interface CreateOrderParams {
+  items: OrderItem[];
+  pickupLocation: Location;
+  deliveryLocation: Location;
+  pricing: OrderPricing;
+  insurance?: OrderInsurance;
+  sender: ContactDetails;
+  receiver: ContactDetails;
+  scheduledPickup: string | Date;
+  vehicle: {
+    type: string;
+    maxWeight?: number;
+  };
+  paymentMethod?: {
+    type: 'card' | 'cash' | 'wallet';
+    details?: any;
+  };
 }
 
 export interface Order {
@@ -112,19 +178,6 @@ export interface Order {
   updatedAt: Date;
 }
 
-export interface Location {
-  address: string;
-  city: string;
-  state: string;
-  postalCode: string;
-  country: string;
-  coordinates?: {
-    latitude: number;
-    longitude: number;
-  };
-  instructions?: string;
-}
-
 export interface DeliveryMetrics {
   totalDeliveries: number;
   successRate: number;
@@ -148,16 +201,6 @@ export interface SignInResponse {
     name: string | null;
   };
   idToken: string;
-}
-
-export interface ContactDetails {
-  name: string;
-  phone: string;
-  alternatePhone?: string;
-  email?: string;
-  address: string;
-  state: string;
-  deliveryInstructions?: string;
 }
 
 export interface VehicleDetails {
@@ -186,71 +229,12 @@ export interface RTOInformation {
   returnPhone?: string;
 }
 
-export interface OrderDraft {
-  sender: {
-    name: string;
-    address: string;
-    phone: string;
-    state?: string;
-  };
-  receiver: {
-    name: string;
-    address: string;
-    phone: string;
-    state?: string;
-  };
-  delivery: {
-    scheduledPickup: FirebaseFirestoreTypes.Timestamp;
-    vehicle: string;
-    fee?: number;
-  };
-  locations: {
-    pickup: Location;
-    delivery: Location;
-  };
-  items?: ItemDetails[];
-  pricing?: {
-    itemValue: number;
-    deliveryFee: number;
-    total: number;
-  };
-  orderDetails: {
-    status: 'draft';
-    createdAt: string;
-    updatedAt: string;
-  };
-}
-
-export interface OrderStorageData extends Omit<OrderDraft, 'delivery'> {
-  delivery: {
-    scheduledPickup: string;
-    vehicle: string;
-    fee?: number;
-  };
-}
+export interface OrderStorageData extends OrderDraft {}
 
 export interface OrderStorage extends OrderStorageData {
   orderDetails: {
     status: 'draft';
     createdAt: string;
     updatedAt: string;
-  };
-}
-
-export interface ItemDetails {
-  category: string;
-  subcategory: string;
-  name: string;
-  weight: string;
-  quantity: string;
-  value: string;
-  imageUri?: string;
-  isFragile?: boolean;
-  requiresSpecialHandling?: boolean;
-  specialInstructions?: string;
-  dimensions?: {
-    length: string;
-    width: string;
-    height: string;
   };
 }

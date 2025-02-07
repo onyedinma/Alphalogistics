@@ -7,7 +7,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { StorageService } from '@/services/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ContactDetails } from '@/types';
+import { ContactDetails } from '../../../types';
 import { GOOGLE_MAPS_API_KEY, MAPS_CONFIG } from '@/config/maps';
 
 type Vehicle = 'bike' | 'car' | 'van' | 'truck';
@@ -109,6 +109,8 @@ export default function NewOrder() {
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [pickupDate, setPickupDate] = useState<Date | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [tempSelectedDate, setTempSelectedDate] = useState<Date | null>(null);
   const [senderDetails, setSenderDetails] = useState<ContactDetails | null>(null);
@@ -142,8 +144,111 @@ export default function NewOrder() {
   }>();
 
   useEffect(() => {
-    loadSavedData();
-  }, []);
+    const loadAndUpdateData = async () => {
+      try {
+        // Get the current draft data
+        const currentDraft = await StorageService.getOrderDraft();
+        
+        // If we have new receiver details from params, prepare them
+        let newReceiverDetails: ContactDetails | undefined;
+        if (params.receiverName || params.receiverAddress || params.receiverPhone || params.receiverState) {
+          newReceiverDetails = {
+            name: params.receiverName || '',
+            address: params.receiverAddress || '',
+            phone: params.receiverPhone || '',
+            state: params.receiverState || '',
+            deliveryMethod: 'delivery'
+          };
+        }
+
+        // If we have new sender details from params, prepare them
+        let newSenderDetails: ContactDetails | undefined;
+        if (params.senderName || params.senderAddress || params.senderPhone || params.senderState) {
+          newSenderDetails = {
+            name: params.senderName || '',
+            address: params.senderAddress || '',
+            phone: params.senderPhone || '',
+            state: params.senderState || '',
+            deliveryMethod: 'delivery'
+          };
+        }
+
+        // Update states based on current draft and new data
+        if (currentDraft?.delivery?.vehicle) {
+          setSelectedVehicle(currentDraft.delivery.vehicle as Vehicle);
+        }
+        if (currentDraft?.delivery?.scheduledPickup) {
+          setPickupDate(new Date(currentDraft.delivery.scheduledPickup));
+        }
+
+        // Update sender details
+        if (newSenderDetails) {
+          setSenderDetails(newSenderDetails);
+        } else if (currentDraft?.sender) {
+          setSenderDetails({
+            ...currentDraft.sender,
+            deliveryMethod: 'delivery'
+          });
+        }
+
+        // Update receiver details
+        if (newReceiverDetails) {
+          setReceiverDetails(newReceiverDetails);
+        } else if (currentDraft?.receiver && !params.receiverName) {
+          setReceiverDetails({
+            ...currentDraft.receiver,
+            deliveryMethod: currentDraft.receiver.deliveryMethod || 'delivery'
+          });
+        }
+
+        // Save the updated draft
+        const updatedDraft = {
+          ...currentDraft,
+          delivery: {
+            ...currentDraft?.delivery,
+            scheduledPickup: currentDraft?.delivery?.scheduledPickup || new Date().toISOString(),
+            vehicle: currentDraft?.delivery?.vehicle || selectedVehicle || 'bike',
+            fee: estimatedCost
+          },
+          sender: newSenderDetails || currentDraft?.sender,
+          receiver: newReceiverDetails || currentDraft?.receiver,
+          locations: {
+            pickup: {
+              address: (newSenderDetails || currentDraft?.sender)?.address || '',
+              state: (newSenderDetails || currentDraft?.sender)?.state || '',
+              city: '',
+              postalCode: '',
+              country: 'Nigeria',
+              instructions: ''
+            },
+            delivery: {
+              address: (newReceiverDetails || currentDraft?.receiver)?.address || '',
+              state: (newReceiverDetails || currentDraft?.receiver)?.state || '',
+              city: '',
+              postalCode: '',
+              country: 'Nigeria',
+              instructions: ''
+            }
+          }
+        };
+
+        await StorageService.saveOrderDraft(updatedDraft);
+      } catch (error) {
+        console.error('Error loading/updating data:', error);
+      }
+    };
+
+    loadAndUpdateData();
+  }, [
+    params.receiverName, 
+    params.receiverAddress, 
+    params.receiverPhone, 
+    params.receiverState,
+    params.senderName,
+    params.senderAddress,
+    params.senderPhone,
+    params.senderState
+  ]);
 
   useEffect(() => {
     const updateDistance = async () => {
@@ -152,10 +257,14 @@ export default function NewOrder() {
           `${senderDetails.address}, ${senderDetails.state}, Nigeria`,
           `${receiverDetails.address}, ${receiverDetails.state}, Nigeria`
         );
-        setDistanceInfo(result);
-        if (selectedVehicle && result.distance > 0) {
-          const cost = BASE_COST[selectedVehicle] + (COST_PER_KM[selectedVehicle] * result.distance);
-          setEstimatedCost(Math.ceil(cost));
+        
+        // Only update if values have changed
+        if (result.distance !== distanceInfo.distance || result.duration !== distanceInfo.duration) {
+          setDistanceInfo(result);
+          if (selectedVehicle && result.distance > 0) {
+            const cost = BASE_COST[selectedVehicle] + (COST_PER_KM[selectedVehicle] * result.distance);
+            setEstimatedCost(Math.ceil(cost));
+          }
         }
       }
     };
@@ -167,18 +276,37 @@ export default function NewOrder() {
     try {
       const savedData = await StorageService.getOrderDraft();
       if (savedData) {
+        const updates = [];
+        
         if (savedData.delivery?.vehicle) {
-          setSelectedVehicle(savedData.delivery.vehicle as Vehicle);
+          updates.push(setSelectedVehicle(savedData.delivery.vehicle as Vehicle));
         }
         if (savedData.delivery?.scheduledPickup) {
-          setPickupDate(new Date(savedData.delivery.scheduledPickup));
+          updates.push(setPickupDate(new Date(savedData.delivery.scheduledPickup)));
         }
         if (savedData.sender) {
-          setSenderDetails(savedData.sender);
+          const senderData: ContactDetails = {
+            name: savedData.sender.name,
+            address: savedData.sender.address,
+            phone: savedData.sender.phone,
+            state: savedData.sender.state,
+            deliveryMethod: 'delivery'
+          };
+          updates.push(setSenderDetails(senderData));
         }
         if (savedData.receiver) {
-          setReceiverDetails(savedData.receiver);
+          const receiverData: ContactDetails = {
+            name: savedData.receiver.name,
+            address: savedData.receiver.address,
+            phone: savedData.receiver.phone,
+            state: savedData.receiver.state,
+            deliveryMethod: (savedData.receiver.deliveryMethod || 'delivery') as 'pickup' | 'delivery'
+          };
+          updates.push(setReceiverDetails(receiverData));
         }
+        
+        // Apply all updates at once
+        await Promise.all(updates);
       }
     } catch (error) {
       console.error('Error loading saved data:', error);
@@ -192,20 +320,124 @@ export default function NewOrder() {
     setEstimatedCost(cost);
   };
 
+  // Add this function to handle state updates
+  const updateFormState = async (newData: Partial<{
+    sender: ContactDetails;
+    receiver: ContactDetails;
+    vehicle: Vehicle;
+    pickupDate: Date;
+  }>) => {
+    try {
+      const currentDraft = await StorageService.getOrderDraft();
+      
+      // Create the updated draft while preserving existing data
+      const updatedDraft = {
+        ...currentDraft,
+        delivery: {
+          ...currentDraft?.delivery,
+          scheduledPickup: newData.pickupDate?.toISOString() || currentDraft?.delivery?.scheduledPickup || new Date().toISOString(),
+          vehicle: newData.vehicle || currentDraft?.delivery?.vehicle || selectedVehicle || 'bike',
+          fee: estimatedCost
+        },
+        sender: newData.sender || currentDraft?.sender || (senderDetails ? {
+          name: senderDetails.name,
+          address: senderDetails.address,
+          phone: senderDetails.phone,
+          state: senderDetails.state
+        } : undefined),
+        receiver: newData.receiver || currentDraft?.receiver || (receiverDetails ? {
+          name: receiverDetails.name,
+          address: receiverDetails.address,
+          phone: receiverDetails.phone,
+          state: receiverDetails.state,
+          deliveryMethod: receiverDetails.deliveryMethod
+        } : undefined),
+        locations: {
+          pickup: {
+            address: (newData.sender || currentDraft?.sender || senderDetails)?.address || '',
+            state: (newData.sender || currentDraft?.sender || senderDetails)?.state || '',
+            city: '',
+            postalCode: '',
+            country: 'Nigeria',
+            instructions: ''
+          },
+          delivery: {
+            address: (newData.receiver || currentDraft?.receiver || receiverDetails)?.address || '',
+            state: (newData.receiver || currentDraft?.receiver || receiverDetails)?.state || '',
+            city: '',
+            postalCode: '',
+            country: 'Nigeria',
+            instructions: ''
+          }
+        }
+      };
+
+      // Save the updated draft
+      await StorageService.saveOrderDraft(updatedDraft);
+
+      // Update local state
+      if (newData.vehicle) setSelectedVehicle(newData.vehicle);
+      if (newData.pickupDate) setPickupDate(newData.pickupDate);
+      if (newData.sender) setSenderDetails(newData.sender);
+      if (newData.receiver) setReceiverDetails(newData.receiver);
+    } catch (error) {
+      console.error('Error updating form state:', error);
+    }
+  };
+
+  // Remove the old handleVehicleSelect and replace with this one
   const handleVehicleSelect = async (vehicle: Vehicle) => {
-    setSelectedVehicle(vehicle);
+    await updateFormState({ vehicle });
     calculateDeliveryCost(vehicle);
     setHasUnsavedChanges(true);
   };
 
+  // Add date confirmation handler
+  const handleDateConfirm = async (date: Date) => {
+    await updateFormState({ pickupDate: date });
+    setHasUnsavedChanges(true);
+    setShowConfirmModal(false);
+  };
+
   const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowPicker(Platform.OS === 'ios');
+    const currentDate = selectedDate || tempSelectedDate || new Date();
     
-    if (selectedDate) {
-      if (validatePickupDate(selectedDate)) {
-        setTempSelectedDate(selectedDate);
-        setShowConfirmModal(true);
+    if (Platform.OS === 'android') {
+      setShowPicker(false);
+      
+      if (event.type === 'dismissed') {
+        return;
       }
+      
+      if (pickerMode === 'date') {
+        // After date selection, show time picker
+        setTempSelectedDate(currentDate);
+        setPickerMode('time');
+        setShowPicker(true);
+        return;
+      }
+    }
+
+    setTempSelectedDate(currentDate);
+    
+    if (pickerMode === 'date' && Platform.OS === 'ios') {
+      // For iOS, update the temp date but don't validate yet
+      return;
+    }
+
+    // Validate the complete date and time
+    if (validatePickupDate(currentDate)) {
+      if (Platform.OS === 'ios') {
+        // For iOS, show confirmation after user is done with the picker
+        setShowConfirmModal(true);
+      } else {
+        // For Android, we're already done with both pickers
+        setShowConfirmModal(true);
+        setPickerMode('date'); // Reset for next time
+      }
+    } else {
+      setTempSelectedDate(null);
+      setPickerMode('date');
     }
   };
 
@@ -213,22 +445,19 @@ export default function NewOrder() {
     const now = new Date();
     const selectedDateTime = date.getTime();
     const minDateTime = now.getTime() + (MIN_PICKUP_HOURS * 60 * 60 * 1000);
+    const maxDateTime = now.getTime() + (MAX_PICKUP_DAYS * 24 * 60 * 60 * 1000);
 
-    // For same day pickups, only check if it's at least MIN_PICKUP_HOURS ahead
-    if (date.toDateString() === now.toDateString()) {
-      if (selectedDateTime < minDateTime) {
-        Alert.alert(
-          'Invalid Time',
-          `Pickup must be at least ${MIN_PICKUP_HOURS} hours from now.`
-        );
-        return false;
-      }
-      return validateBusinessHours(date);
+    // Check if date is too early
+    if (selectedDateTime < minDateTime) {
+      Alert.alert(
+        'Invalid Time',
+        `Pickup must be at least ${MIN_PICKUP_HOURS} hours from now.`
+      );
+      return false;
     }
 
-    // For future dates
-    const maxTime = new Date(now.getTime() + MAX_PICKUP_DAYS * 24 * 60 * 60 * 1000);
-    if (date > maxTime) {
+    // Check if date is too far in the future
+    if (selectedDateTime > maxDateTime) {
       Alert.alert(
         'Invalid Date',
         `Pickup cannot be more than ${MAX_PICKUP_DAYS} days in advance.`
@@ -244,6 +473,17 @@ export default function NewOrder() {
     const minutes = date.getMinutes();
     const time = hours + minutes / 60;
 
+    // Check if it's a weekend
+    const dayOfWeek = date.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      Alert.alert(
+        'Weekend Selected',
+        'Pickups are only available on weekdays (Monday to Friday).'
+      );
+      return false;
+    }
+
+    // Check business hours (8 AM to 6 PM)
     if (time < 8 || time > 18) {
       Alert.alert(
         'Outside Business Hours',
@@ -251,6 +491,7 @@ export default function NewOrder() {
       );
       return false;
     }
+
     return true;
   };
 
@@ -355,25 +596,31 @@ export default function NewOrder() {
               <Ionicons name="pencil-outline" size={20} color="#666" />
             </TouchableOpacity>
           </View>
+          {showPicker && (
+            <DateTimePicker
+              value={tempSelectedDate || new Date()}
+              mode={pickerMode}
+              is24Hour={true}
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={handleDateChange}
+              minimumDate={new Date()}
+              maximumDate={new Date(Date.now() + (MAX_PICKUP_DAYS * 24 * 60 * 60 * 1000))}
+            />
+          )}
           <TouchableOpacity 
             style={styles.datePickerButton}
-            onPress={() => setShowPicker(true)}
+            onPress={() => {
+              setPickerMode('date');
+              setShowPicker(true);
+            }}
           >
             <Text style={styles.datePickerButtonText}>
-              {pickupDate ? pickupDate.toLocaleDateString() : 'Select Date'}
+              {pickupDate 
+                ? `${pickupDate.toLocaleDateString()} ${pickupDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                : 'Select Date and Time'}
             </Text>
           </TouchableOpacity>
         </View>
-
-        {showPicker && Platform.OS === 'android' && (
-          <DateTimePicker
-            value={tempSelectedDate || new Date()}
-            mode="date"
-            display="default"
-            onChange={handleDateChange}
-            minimumDate={new Date()}
-          />
-        )}
 
         <Modal
           visible={showConfirmModal}
@@ -401,10 +648,8 @@ export default function NewOrder() {
                   style={[styles.modalButton, styles.modalButtonFilled]}
                   onPress={() => {
                     if (tempSelectedDate) {
-                      setPickupDate(tempSelectedDate);
-                      setHasUnsavedChanges(true);
+                      handleDateConfirm(tempSelectedDate);
                     }
-                    setShowConfirmModal(false);
                   }}
                 >
                   <Text style={styles.modalButtonFilledText}>Confirm</Text>

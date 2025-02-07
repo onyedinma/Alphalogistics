@@ -12,7 +12,7 @@ import { Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { OrderService } from '@/services/orders';
-import { OrderItem, Location, OrderPricing, OrderInsurance, CreateOrderParams, OrderDraft, ItemDetails } from '@/types';
+import { OrderItem, Location, OrderPricing, OrderInsurance, CreateOrderParams, OrderDraft, ItemDetails } from './types';
 import { StorageService } from '@/services/storage';
 import { Timestamp } from 'firebase/firestore';
 
@@ -131,18 +131,22 @@ export default function CheckoutScreen() {
 
       // Map items to OrderItem type with proper type conversion
       const items: OrderItem[] = (orderDraft.items || []).map((item) => ({
-        id: `temp-${Math.random().toString(36).substr(2, 9)}`,
+        id: `temp-${Math.random().toString(36).substring(2, 11)}`,
         name: item.name,
         category: item.category,
         subcategory: item.subcategory,
-        quantity: item.quantity,
-        weight: item.weight,
-        value: item.value,
+        quantity: parseInt(item.quantity),
+        weight: parseFloat(item.weight),
+        value: parseFloat(item.value),
         imageUrl: item.imageUri,
         isFragile: item.isFragile || false,
         requiresSpecialHandling: item.requiresSpecialHandling || false,
         specialInstructions: item.specialInstructions,
-        dimensions: item.dimensions
+        dimensions: item.dimensions ? {
+          length: parseFloat(item.dimensions.length),
+          width: parseFloat(item.dimensions.width),
+          height: parseFloat(item.dimensions.height)
+        } : undefined
       }));
 
       // Format the pickup date
@@ -242,7 +246,7 @@ export default function CheckoutScreen() {
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Pickup Date:</Text>
               <Text style={styles.detailsValue}>
-                {orderDraft.delivery?.scheduledPickup?.toDate().toLocaleDateString()}
+                {orderDraft.delivery?.scheduledPickup ? new Date(orderDraft.delivery.scheduledPickup).toLocaleDateString() : ''}
               </Text>
             </View>
             <View style={styles.detailsRow}>
