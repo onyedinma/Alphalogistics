@@ -270,44 +270,44 @@ export default function SenderDetails() {
           </Text>
         </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Sender's Name</Text>
-          <TextInput
-            style={[styles.input, formErrors.name && styles.inputError]}
-            value={formData.name}
-            onChangeText={(name) => {
-              setFormData(prev => ({ ...prev, name }));
-              setFormErrors(prev => ({ ...prev, name: undefined }));
-            }}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Sender's Name</Text>
+            <TextInput
+              style={[styles.input, formErrors.name && styles.inputError]}
+              value={formData.name}
+              onChangeText={(name) => {
+                setFormData(prev => ({ ...prev, name }));
+                setFormErrors(prev => ({ ...prev, name: undefined }));
+              }}
             placeholder="Enter Sender's Name"
             placeholderTextColor="#999"
-          />
-          {formErrors.name && (
-            <Text style={styles.errorText}>{formErrors.name}</Text>
-          )}
-        </View>
+            />
+            {formErrors.name && (
+              <Text style={styles.errorText}>{formErrors.name}</Text>
+            )}
+          </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Address</Text>
-          <TouchableOpacity 
-            style={[styles.addressInput, formErrors.address && styles.inputError]} 
-            onPress={handleAddressSearch}
-          >
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Address</Text>
+            <TouchableOpacity 
+              style={[styles.addressInput, formErrors.address && styles.inputError]} 
+              onPress={handleAddressSearch}
+            >
             <Text style={[
-              styles.addressText,
-              !formData.address && styles.placeholderText
+                styles.addressText,
+                !formData.address && styles.placeholderText
             ]}>
-              {formData.address || 'Search for address'}
-            </Text>
-            <Ionicons name="search-outline" size={20} color="#4A90E2" />
-          </TouchableOpacity>
-          {formErrors.address && (
-            <Text style={styles.errorText}>{formErrors.address}</Text>
-          )}
-        </View>
+                {formData.address || 'Search for address'}
+              </Text>
+              <Ionicons name="search-outline" size={20} color="#4A90E2" />
+            </TouchableOpacity>
+            {formErrors.address && (
+              <Text style={styles.errorText}>{formErrors.address}</Text>
+            )}
+          </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>State</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>State</Text>
           <TextInput
             style={[styles.input, formErrors.state && styles.inputError]}
             placeholder="Enter state"
@@ -319,51 +319,51 @@ export default function SenderDetails() {
             editable={false}
             placeholderTextColor="#999"
           />
-          {formErrors.state && (
-            <Text style={styles.errorText}>{formErrors.state}</Text>
-          )}
-        </View>
+            {formErrors.state && (
+              <Text style={styles.errorText}>{formErrors.state}</Text>
+            )}
+          </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Phone Number</Text>
-          <View style={styles.phoneInputWrapper}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Phone Number</Text>
+            <View style={styles.phoneInputWrapper}>
             <TextInput
               style={[styles.phoneInput, formErrors.phone && styles.inputError]}
               placeholder="Enter phone number"
-              value={formData.phone}
+                value={formData.phone}
               onChangeText={(phone) => {
                 setFormData(prev => ({ ...prev, phone }));
                 setFormErrors(prev => ({ ...prev, phone: undefined }));
               }}
               keyboardType="phone-pad"
               placeholderTextColor="#999"
-            />
-            <TouchableOpacity 
-              style={styles.contactButton}
-              onPress={handleContactSelect}
-            >
-              <Ionicons name="people-outline" size={24} color="#007AFF" />
-            </TouchableOpacity>
+              />
+              <TouchableOpacity 
+                style={styles.contactButton}
+                onPress={handleContactSelect}
+              >
+                <Ionicons name="people-outline" size={24} color="#007AFF" />
+              </TouchableOpacity>
+            </View>
+            {formErrors.phone && (
+              <Text style={styles.errorText}>{formErrors.phone}</Text>
+            )}
           </View>
-          {formErrors.phone && (
-            <Text style={styles.errorText}>{formErrors.phone}</Text>
-          )}
-        </View>
       </ScrollView>
 
-      <TouchableOpacity 
-        style={[
-          styles.proceedButton,
-          (!formData.name || !formData.address || !formData.state || !formData.phone) && styles.disabledButton
-        ]} 
-        onPress={handleProceed}
-        disabled={!formData.name || !formData.address || !formData.state || !formData.phone}
-      >
-        <Text style={styles.proceedButtonText}>
-          {isLoading ? 'Saving...' : 'Proceed'}
-        </Text>
-      </TouchableOpacity>
-    </View>
+          <TouchableOpacity 
+            style={[
+              styles.proceedButton,
+              (!formData.name || !formData.address || !formData.state || !formData.phone) && styles.disabledButton
+            ]} 
+            onPress={handleProceed}
+            disabled={!formData.name || !formData.address || !formData.state || !formData.phone}
+          >
+            <Text style={styles.proceedButtonText}>
+              {isLoading ? 'Saving...' : 'Proceed'}
+            </Text>
+          </TouchableOpacity>
+        </View>
   );
 }
 

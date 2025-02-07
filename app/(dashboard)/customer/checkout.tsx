@@ -233,9 +233,9 @@ export default function CheckoutScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Receiver Details</Text>
           <View style={styles.detailsCard}>
-            <Text style={styles.detailsName}>{orderDraft.receiver.name}</Text>
-            <Text style={styles.detailsText}>{orderDraft.receiver.phone}</Text>
-            <Text style={styles.detailsText}>{orderDraft.receiver.address}</Text>
+            <Text style={styles.detailsName}>{orderDraft.receiver?.name}</Text>
+            <Text style={styles.detailsText}>{orderDraft.receiver?.phone}</Text>
+            <Text style={styles.detailsText}>{orderDraft.receiver?.address}</Text>
           </View>
         </View>
 

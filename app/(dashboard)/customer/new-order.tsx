@@ -260,10 +260,10 @@ export default function NewOrder() {
         
         // Only update if values have changed
         if (result.distance !== distanceInfo.distance || result.duration !== distanceInfo.duration) {
-          setDistanceInfo(result);
-          if (selectedVehicle && result.distance > 0) {
-            const cost = BASE_COST[selectedVehicle] + (COST_PER_KM[selectedVehicle] * result.distance);
-            setEstimatedCost(Math.ceil(cost));
+        setDistanceInfo(result);
+        if (selectedVehicle && result.distance > 0) {
+          const cost = BASE_COST[selectedVehicle] + (COST_PER_KM[selectedVehicle] * result.distance);
+          setEstimatedCost(Math.ceil(cost));
           }
         }
       }
@@ -448,12 +448,12 @@ export default function NewOrder() {
     const maxDateTime = now.getTime() + (MAX_PICKUP_DAYS * 24 * 60 * 60 * 1000);
 
     // Check if date is too early
-    if (selectedDateTime < minDateTime) {
-      Alert.alert(
-        'Invalid Time',
-        `Pickup must be at least ${MIN_PICKUP_HOURS} hours from now.`
-      );
-      return false;
+      if (selectedDateTime < minDateTime) {
+        Alert.alert(
+          'Invalid Time',
+          `Pickup must be at least ${MIN_PICKUP_HOURS} hours from now.`
+        );
+        return false;
     }
 
     // Check if date is too far in the future

@@ -32,8 +32,13 @@ interface EnhancedContact extends Contacts.Contact {
 
 interface FormData {
   name: string;
-  address: string;
+  streetNumber: string;
+  landmark: string;
+  locality: string;
+  city: string;
   state: string;
+  pincode: string;
+  address: string;
   phone: string;
   deliveryMethod: 'pickup' | 'delivery';
   pickupCenter?: string;
@@ -49,6 +54,11 @@ interface RouteParams {
   selectedState?: string;
   selectedCountry?: string;
   showManualEntry?: string;
+  selectedStreetNumber?: string;
+  selectedLandmark?: string;
+  selectedLocality?: string;
+  selectedCity?: string;
+  selectedPostalCode?: string;
 }
 
 export default function ReceiverDetails() {
@@ -57,8 +67,13 @@ export default function ReceiverDetails() {
   // State hooks
   const [formData, setFormData] = useState<FormData>({
     name: '',
-    address: '',
+    streetNumber: '',
+    landmark: '',
+    locality: '',
+    city: '',
     state: '',
+    pincode: '',
+    address: '',
     phone: '',
     deliveryMethod: 'delivery',
     pickupCenter: ''
@@ -152,16 +167,26 @@ export default function ReceiverDetails() {
     };
   }, []);
 
-  // Modify the address search handler
+  // Add handleAddressSearch function after other handlers
   const handleAddressSearch = async () => {
     try {
+      // Save current form data to AsyncStorage before navigation
+      const currentDraft = await StorageService.getOrderDraft();
+      await StorageService.saveOrderDraft({
+        ...currentDraft,
+        receiver: {
+          ...formData,
+          deliveryMethod: 'delivery' // Force delivery method when searching address
+        }
+      });
+
       router.push({
         pathname: '/(dashboard)/customer/address-search',
         params: {
           returnTo: 'receiver',
           currentName: formData.name,
           currentPhone: formData.phone,
-          currentDeliveryMethod: formData.deliveryMethod
+          currentDeliveryMethod: 'delivery'
         }
       });
     } catch (error) {
@@ -187,7 +212,7 @@ export default function ReceiverDetails() {
     };
   }, [params.returnFromAddressSearch]);
 
-  // Modify the address search results handler
+  // Update the address search results handler
   useEffect(() => {
     if (params.returnFromAddressSearch === 'true' && params.selectedAddress) {
       const loadTempData = async () => {
@@ -197,11 +222,23 @@ export default function ReceiverDetails() {
           
           setFormData(prev => ({
             ...prev,
+            deliveryMethod: 'delivery',
             address: params.selectedAddress || '',
-            state: params.selectedState || prev.state
+            streetNumber: params.selectedStreetNumber || '',
+            landmark: params.selectedLandmark || '',
+            locality: params.selectedLocality || '',
+            city: params.selectedCity || '',
+            state: params.selectedState || prev.state,
+            pincode: params.selectedPostalCode || '',
           }));
           
-          setFormErrors(prev => ({ ...prev, address: undefined, state: undefined }));
+          setFormErrors(prev => ({ 
+            ...prev, 
+            address: undefined, 
+            state: undefined 
+          }));
+          
+          setShowManualEntry(true);
           
           await AsyncStorage.removeItem('tempSenderData');
         } catch (error) {
@@ -211,7 +248,9 @@ export default function ReceiverDetails() {
       
       loadTempData();
     }
-  }, [params.returnFromAddressSearch, params.selectedAddress, params.selectedState]);
+  }, [params.returnFromAddressSearch, params.selectedAddress, params.selectedState, 
+      params.selectedStreetNumber, params.selectedLandmark, params.selectedLocality, 
+      params.selectedCity, params.selectedPostalCode]);
 
   // Add a separate useEffect to handle showing manual entry
   useEffect(() => {
@@ -351,11 +390,16 @@ export default function ReceiverDetails() {
         ...currentDraft,
         receiver: {
           name: formData.name.trim(),
+          streetNumber: formData.streetNumber,
+          landmark: formData.landmark,
+          locality: formData.locality,
+          city: formData.city,
+          state: formData.state.trim(),
+          pincode: formData.pincode,
           address: formData.address.trim(),
           phone: formData.phone.trim(),
-          state: formData.state.trim(),
           deliveryMethod: formData.deliveryMethod,
-          pickupCenter: formData.deliveryMethod === 'pickup' ? formData.pickupCenter : undefined
+          pickupCenter: formData.deliveryMethod === 'pickup' ? formData.pickupCenter : undefined,
         }
       };
 
@@ -493,7 +537,12 @@ export default function ReceiverDetails() {
             address: receiver.address,
             state: receiver.state,
             deliveryMethod: receiver.deliveryMethod,
-            pickupCenter: receiver.pickupCenter || ''
+            pickupCenter: receiver.pickupCenter || '',
+            streetNumber: receiver.streetNumber || '',
+            landmark: receiver.landmark || '',
+            locality: receiver.locality || '',
+            city: receiver.city || '',
+            pincode: receiver.pincode || '',
           });
         }
       } catch (error) {
@@ -583,22 +632,105 @@ export default function ReceiverDetails() {
           )}
         </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Address</Text>
-          <TextInput
-            style={[styles.input, formErrors.address && styles.inputError]}
-            value={formData.address}
-            onChangeText={(address) => {
-              setFormData(prev => ({ ...prev, address }));
-              setFormErrors(prev => ({ ...prev, address: undefined }));
-            }}
-            placeholder="Enter Address"
-            placeholderTextColor="#999"
-          />
-          {formErrors.address && (
-            <Text style={styles.errorText}>{formErrors.address}</Text>
-          )}
-        </View>
+        {formData.deliveryMethod === 'delivery' && (
+          <>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Address</Text>
+              <TouchableOpacity 
+                style={styles.addressInput}
+                onPress={handleAddressSearch}
+              >
+                <Text style={formData.address ? styles.addressText : styles.placeholderText}>
+                  {formData.address || 'Search for address'}
+                </Text>
+                <Ionicons name="search" size={20} color="#666" />
+              </TouchableOpacity>
+              {formErrors.address && (
+                <Text style={styles.errorText}>{formErrors.address}</Text>
+              )}
+            </View>
+
+            {(showManualEntry || formData.address) && (
+              <>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Street/Door Number</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.streetNumber}
+                    onChangeText={(streetNumber) => {
+                      setFormData(prev => ({ ...prev, streetNumber }));
+                    }}
+                    placeholder="Enter Street/Door Number"
+                    placeholderTextColor="#999"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Landmark</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.landmark}
+                    onChangeText={(landmark) => {
+                      setFormData(prev => ({ ...prev, landmark }));
+                    }}
+                    placeholder="Enter Landmark"
+                    placeholderTextColor="#999"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Locality</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.locality}
+                    onChangeText={(locality) => {
+                      setFormData(prev => ({ ...prev, locality }));
+                    }}
+                    placeholder="Enter Locality"
+                    placeholderTextColor="#999"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>City</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.city}
+                    onChangeText={(city) => {
+                      setFormData(prev => ({ ...prev, city }));
+                    }}
+                    placeholder="Enter City"
+                    placeholderTextColor="#999"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Pincode</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.pincode}
+                    onChangeText={(pincode) => {
+                      setFormData(prev => ({ ...prev, pincode }));
+                    }}
+                    placeholder="Enter Pincode"
+                    placeholderTextColor="#999"
+                    keyboardType="numeric"
+                  />
+                </View>
+              </>
+            )}
+
+            {!showManualEntry && !formData.address && (
+              <TouchableOpacity
+                style={styles.manualEntryButton}
+                onPress={() => setShowManualEntry(true)}
+              >
+                <Ionicons name="create-outline" size={20} color="#4A90E2" />
+                <Text style={styles.manualEntryText}>Enter address manually</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>State</Text>
@@ -880,14 +1012,15 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   addressInput: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     borderRadius: 8,
-    backgroundColor: '#F5F5F5',
-    marginBottom: 8,
+    padding: 12,
+    minHeight: 48,
   },
   fullWidth: {
     flex: 1,

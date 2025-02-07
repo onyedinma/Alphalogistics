@@ -482,7 +482,7 @@ export default function ItemDetailsScreen() {
       if (!orderDraft) {
         throw new Error('No order draft found');
       }
-
+      
       const updatedDraft: OrderDraft = {
         ...orderDraft,
         items: [...(orderDraft.items || []), newItem],
@@ -534,21 +534,21 @@ export default function ItemDetailsScreen() {
 
   // Function to handle dimension changes
   const handleDimensionChange = (dimension: 'length' | 'width' | 'height', value: string) => {
-    setCurrentItem(prev => ({
-      ...prev,
-      dimensions: {
-        ...prev.dimensions,
+      setCurrentItem(prev => ({
+        ...prev,
+        dimensions: {
+          ...prev.dimensions,
         [dimension]: value
-      }
-    }));
+        }
+      }));
   };
 
   // Function to handle input changes
   const handleInputChange = (field: keyof ItemFormData, value: string) => {
-    setCurrentItem(prev => ({
-      ...prev,
-      [field]: value
-    }));
+      setCurrentItem(prev => ({
+        ...prev,
+        [field]: value
+      }));
   };
 
   // Load saved items when component mounts

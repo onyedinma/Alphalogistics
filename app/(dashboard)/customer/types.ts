@@ -39,6 +39,11 @@ export interface ContactDetails {
   deliveryMethod: 'pickup' | 'delivery';
   pickupCenter?: string;
   specialInstructions?: string;
+  streetNumber?: string;
+  landmark?: string;
+  locality?: string;
+  city?: string;
+  pincode?: string;
 }
 
 export interface OrderDraft {
@@ -48,13 +53,18 @@ export interface OrderDraft {
     phone: string;
     state: string;
   };
-  receiver: {
+  receiver?: {
     name: string;
     address: string;
     phone: string;
     state: string;
     deliveryMethod: 'pickup' | 'delivery';
     pickupCenter?: string;
+    streetNumber?: string;
+    landmark?: string;
+    locality?: string;
+    city?: string;
+    pincode?: string;
   };
   delivery: {
     scheduledPickup: string;
