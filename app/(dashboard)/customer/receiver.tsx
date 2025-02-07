@@ -89,6 +89,7 @@ export default function ReceiverDetails() {
   const [displayedContacts, setDisplayedContacts] = useState<EnhancedContact[]>([]);
   const [page, setPage] = useState(0);
   const [cachedContacts, setCachedContacts] = useState<EnhancedContact[]>([]);
+  const [showAddressFields, setShowAddressFields] = useState(false);
 
   // Memoized values
   const filteredContacts = useMemo(() => {
@@ -167,90 +168,65 @@ export default function ReceiverDetails() {
     };
   }, []);
 
-  // Add handleAddressSearch function after other handlers
+  // Update handleAddressSearch function
   const handleAddressSearch = async () => {
     try {
-      // Save current form data to AsyncStorage before navigation
-      const currentDraft = await StorageService.getOrderDraft();
-      await StorageService.saveOrderDraft({
-        ...currentDraft,
-        receiver: {
-          ...formData,
-          deliveryMethod: 'delivery' // Force delivery method when searching address
-        }
-      });
+      // Save current form data to AsyncStorage before navigating
+      await AsyncStorage.setItem('tempReceiverData', JSON.stringify({
+        name: formData.name,
+        phone: formData.phone,
+        deliveryMethod: formData.deliveryMethod,
+        pickupCenter: formData.pickupCenter
+      }));
 
       router.push({
         pathname: '/(dashboard)/customer/address-search',
         params: {
-          returnTo: 'receiver',
-          currentName: formData.name,
-          currentPhone: formData.phone,
-          currentDeliveryMethod: 'delivery'
+          returnTo: 'receiver'
         }
       });
     } catch (error) {
-      console.error('Error handling address search:', error);
+      console.error('Error saving temp data:', error);
       Alert.alert('Error', 'Failed to process address search. Please try again.');
     }
   };
 
-  // Add a separate cleanup effect for component unmount only
-  useEffect(() => {
-    return () => {
-      const cleanup = async () => {
-        try {
-          // Only clear storage when leaving the screen completely
-          if (!params.returnFromAddressSearch) {
-            await AsyncStorage.removeItem('orderDraft');
-          }
-        } catch (error) {
-          console.error('Error cleaning up storage:', error);
-        }
-      };
-      cleanup();
-    };
-  }, [params.returnFromAddressSearch]);
-
-  // Update the address search results handler
+  // Update the address search return handler
   useEffect(() => {
     if (params.returnFromAddressSearch === 'true' && params.selectedAddress) {
-      const loadTempData = async () => {
+      const loadSavedData = async () => {
         try {
-          const tempData = await AsyncStorage.getItem('tempSenderData');
-          const parsedTempData = tempData ? JSON.parse(tempData) : {};
+          // Load the saved form data
+          const tempData = await AsyncStorage.getItem('tempReceiverData');
+          const savedData = tempData ? JSON.parse(tempData) : {};
           
-          setFormData(prev => ({
-            ...prev,
+      setFormData(prev => ({
+        ...prev,
+            name: savedData.name || prev.name, // Preserve name from temp data or current state
+            phone: savedData.phone || prev.phone, // Preserve phone from temp data or current state
             deliveryMethod: 'delivery',
-            address: params.selectedAddress || '',
-            streetNumber: params.selectedStreetNumber || '',
-            landmark: params.selectedLandmark || '',
-            locality: params.selectedLocality || '',
-            city: params.selectedCity || '',
-            state: params.selectedState || prev.state,
-            pincode: params.selectedPostalCode || '',
-          }));
+        address: params.selectedAddress || '',
+        state: params.selectedState || prev.state,
+        streetNumber: params.selectedStreetNumber || prev.streetNumber,
+        landmark: params.selectedLandmark || prev.landmark,
+        locality: params.selectedLocality || prev.locality,
+        city: params.selectedCity || prev.city,
+        pincode: params.selectedPostalCode || prev.pincode,
+      }));
           
-          setFormErrors(prev => ({ 
-            ...prev, 
-            address: undefined, 
-            state: undefined 
-          }));
-          
-          setShowManualEntry(true);
-          
-          await AsyncStorage.removeItem('tempSenderData');
+      setFormErrors(prev => ({ ...prev, address: undefined, state: undefined }));
+      setShowAddressFields(true);
+
+          // Clean up temp storage
+          await AsyncStorage.removeItem('tempReceiverData');
         } catch (error) {
-          console.error('Error loading temp data:', error);
+          console.error('Error loading saved data:', error);
         }
       };
       
-      loadTempData();
+      loadSavedData();
     }
-  }, [params.returnFromAddressSearch, params.selectedAddress, params.selectedState, 
-      params.selectedStreetNumber, params.selectedLandmark, params.selectedLocality, 
-      params.selectedCity, params.selectedPostalCode]);
+  }, [params.returnFromAddressSearch, params.selectedAddress]);
 
   // Add a separate useEffect to handle showing manual entry
   useEffect(() => {
@@ -306,6 +282,21 @@ export default function ReceiverDetails() {
 
     // Only save if we have at least one field filled
     if (formData.name || formData.address || formData.state || formData.phone) {
+      saveFormData();
+    }
+  }, [formData]);
+
+  // Add this effect to save form data changes
+  useEffect(() => {
+    const saveFormData = async () => {
+      try {
+        await AsyncStorage.setItem('receiverFormData', JSON.stringify(formData));
+      } catch (error) {
+        console.error('Error saving form data:', error);
+      }
+    };
+
+    if (formData.address || formData.name || formData.phone) {
       saveFormData();
     }
   }, [formData]);
@@ -528,22 +519,35 @@ export default function ReceiverDetails() {
   useEffect(() => {
     const loadInitialData = async () => {
       try {
+        // Load from orderDraft first
         const orderDraft = await StorageService.getOrderDraft();
         const receiver = orderDraft?.receiver;
-        if (receiver) {
+        
+        // Load from receiverFormData (temporary storage)
+        const savedFormData = await AsyncStorage.getItem('receiverFormData');
+        const parsedFormData = savedFormData ? JSON.parse(savedFormData) : null;
+        
+        if (receiver || parsedFormData) {
+          const data = parsedFormData || receiver;
           setFormData({
-            name: receiver.name,
-            phone: receiver.phone,
-            address: receiver.address,
-            state: receiver.state,
-            deliveryMethod: receiver.deliveryMethod,
-            pickupCenter: receiver.pickupCenter || '',
-            streetNumber: receiver.streetNumber || '',
-            landmark: receiver.landmark || '',
-            locality: receiver.locality || '',
-            city: receiver.city || '',
-            pincode: receiver.pincode || '',
+            name: data.name || '',
+            phone: data.phone || '',
+            address: data.address || '',
+            state: data.state || '',
+            deliveryMethod: data.deliveryMethod || 'delivery',
+            pickupCenter: data.pickupCenter || '',
+            streetNumber: data.streetNumber || '',
+            landmark: data.landmark || '',
+            locality: data.locality || '',
+            city: data.city || '',
+            pincode: data.pincode || '',
           });
+          
+          // Show address fields if we have any address data
+          if (data.address || data.streetNumber || data.landmark || 
+              data.locality || data.city || data.pincode) {
+            setShowAddressFields(true);
+          }
         }
       } catch (error) {
         console.error('Error loading initial data:', error);
@@ -551,6 +555,23 @@ export default function ReceiverDetails() {
     };
     loadInitialData();
   }, []);
+
+  // Update cleanup effect
+  useEffect(() => {
+    return () => {
+      const cleanup = async () => {
+        try {
+          if (!params.returnFromAddressSearch) {
+            await AsyncStorage.removeItem('receiverFormData');
+            await AsyncStorage.removeItem('orderDraft');
+          }
+        } catch (error) {
+          console.error('Error cleaning up storage:', error);
+        }
+      };
+      cleanup();
+    };
+  }, [params.returnFromAddressSearch]);
 
   return (
     <View style={styles.container}>
@@ -650,7 +671,21 @@ export default function ReceiverDetails() {
               )}
             </View>
 
-            {(showManualEntry || formData.address) && (
+            <TouchableOpacity
+              style={styles.manualEntryButton}
+              onPress={() => setShowAddressFields(!showAddressFields)}
+            >
+              <Ionicons 
+                name={showAddressFields ? "chevron-down-outline" : "create-outline"} 
+                size={20} 
+                color="#4A90E2" 
+              />
+              <Text style={styles.manualEntryText}>
+                {showAddressFields ? 'Hide address details' : 'Enter address manually'}
+              </Text>
+            </TouchableOpacity>
+
+            {showAddressFields && (
               <>
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Street/Door Number</Text>
@@ -705,6 +740,23 @@ export default function ReceiverDetails() {
                 </View>
 
                 <View style={styles.inputGroup}>
+                  <Text style={styles.label}>State</Text>
+                  <TextInput
+                    style={[styles.input, formErrors.state && styles.inputError]}
+                    value={formData.state}
+                    onChangeText={(state) => {
+                      setFormData(prev => ({ ...prev, state }));
+                      setFormErrors(prev => ({ ...prev, state: undefined }));
+                    }}
+                    placeholder="Enter State"
+                    placeholderTextColor="#999"
+                  />
+                  {formErrors.state && (
+                    <Text style={styles.errorText}>{formErrors.state}</Text>
+                  )}
+                </View>
+
+                <View style={styles.inputGroup}>
                   <Text style={styles.label}>Pincode</Text>
                   <TextInput
                     style={styles.input}
@@ -719,35 +771,8 @@ export default function ReceiverDetails() {
                 </View>
               </>
             )}
-
-            {!showManualEntry && !formData.address && (
-              <TouchableOpacity
-                style={styles.manualEntryButton}
-                onPress={() => setShowManualEntry(true)}
-              >
-                <Ionicons name="create-outline" size={20} color="#4A90E2" />
-                <Text style={styles.manualEntryText}>Enter address manually</Text>
-              </TouchableOpacity>
-            )}
           </>
         )}
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>State</Text>
-          <TextInput
-            style={[styles.input, formErrors.state && styles.inputError]}
-            value={formData.state}
-            onChangeText={(state) => {
-              setFormData(prev => ({ ...prev, state }));
-              setFormErrors(prev => ({ ...prev, state: undefined }));
-            }}
-            placeholder="Enter State"
-            placeholderTextColor="#999"
-          />
-          {formErrors.state && (
-            <Text style={styles.errorText}>{formErrors.state}</Text>
-          )}
-        </View>
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Phone Number</Text>

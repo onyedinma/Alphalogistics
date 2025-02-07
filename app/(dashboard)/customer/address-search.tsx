@@ -143,28 +143,24 @@ export default function AddressSearch() {
 
         if (params.returnTo === 'receiver') {
           router.push({
-            pathname: '/(dashboard)/customer/receiver',
+            pathname: '/customer/receiver',
             params: {
+              returnFromAddressSearch: 'true',
               selectedAddress: completeAddress,
-              address: completeAddress,
-              selectedState: state || '',
-              selectedCountry: country || '',
-              selectedStreetNumber: streetAddress || '',
-              selectedLocality: locality || '',
-              selectedLandmark: landmark || '',
-              selectedCity: city || '',
-              selectedPostalCode: postalCode || '',
-              showManualEntry: 'true',
-              returnFromAddressSearch: 'true'
+              selectedState: state,
+              selectedStreetNumber: streetAddress,
+              selectedLandmark: landmark,
+              selectedLocality: locality,
+              selectedCity: city,
+              selectedPostalCode: postalCode
             }
           });
         } else if (params.returnTo === 'sender') {
           router.push({
-            pathname: '/(dashboard)/customer/sender',
+            pathname: '/customer/sender',
             params: {
               selectedAddress: completeAddress,
-              selectedState: state || '',
-              selectedCountry: country || '',
+              selectedState: state,
               returnFromAddressSearch: 'true'
             }
           });
