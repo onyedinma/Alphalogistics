@@ -1,20 +1,29 @@
 # Receiver Address Implementation Documentation
 
 ## Overview
-The receiver address implementation in the logistics app handles address search, selection, and manual entry functionality. It uses Google Places API for address search and maintains state consistency across searches.
+The receiver address implementation in the logistics app handles address search, selection, and manual entry functionality. It uses Google Places API for address search and maintains state consistency across navigation and screen transitions.
 
 ## Key Components
 
-### 1. Address Search Flow
-- User clicks on address field
-- Navigates to address search screen
-- Uses Google Places API for address suggestions
-- Selected address returns with structured components
-
-### 2. State Management
+### 1. State Management
 ```typescript
-// Main form state
-const [formData, setFormData] = useState<ContactDetails>({
+// Main form state interface
+interface FormData {
+  name: string;
+  streetNumber: string;
+  landmark: string;
+  locality: string;
+  city: string;
+  state: string;
+  pincode: string;
+  address: string;
+  phone: string;
+  deliveryMethod: 'pickup' | 'delivery';
+  pickupCenter?: string;
+}
+
+// Form state initialization
+const [formData, setFormData] = useState<FormData>({
   name: '',
   streetNumber: '',
   landmark: '',
@@ -24,351 +33,277 @@ const [formData, setFormData] = useState<ContactDetails>({
   pincode: '',
   address: '',
   phone: '',
-  deliveryMethod: 'pickup',
-  pickupCenter: '',
-  specialInstructions: ''
+  deliveryMethod: 'delivery',
+  pickupCenter: ''
 });
 ```
 
+### 2. Address Search Flow
+```typescript
+// Save current form data before navigating to address search
+const handleAddressSearch = async () => {
+  try {
+    // Save current form data to temporary storage
+    await AsyncStorage.setItem('tempReceiverData', JSON.stringify({
+      name: formData.name,
+      phone: formData.phone,
+      deliveryMethod: formData.deliveryMethod,
+      pickupCenter: formData.pickupCenter
+    }));
+
+    router.push({
+      pathname: '/(dashboard)/customer/address-search',
+      params: { returnTo: 'receiver' }
+    });
+  } catch (error) {
+    console.error('Error saving temp data:', error);
+    Alert.alert('Error', 'Failed to process address search.');
+  }
+};
+```
+
+### 3. Address Return Handler
+```typescript
+// Handle address search return with data preservation
+useEffect(() => {
+  if (params.returnFromAddressSearch === 'true' && params.selectedAddress) {
+    console.log('Return from address search with params:', params);
+    const loadSavedData = async () => {
+      try {
+        // Load the saved form data
+        const tempData = await AsyncStorage.getItem('tempReceiverData');
+        const savedData = tempData ? JSON.parse(tempData) : {};
+        
+        console.log('Loaded saved data:', savedData);
+        
+        // Update form data while preserving saved fields
+        setFormData(prev => ({
+          ...prev,
+          name: savedData.name || prev.name,  // Preserve name from temp data or current state
+          phone: savedData.phone || prev.phone,  // Preserve phone from temp data or current state
+          deliveryMethod: 'delivery',
+          // Set new address data
+          address: params.selectedAddress || prev.address,
+          state: params.selectedState || prev.state,
+          streetNumber: params.selectedStreetNumber || prev.streetNumber,
+          landmark: params.selectedLandmark || prev.landmark,
+          locality: params.selectedLocality || prev.locality,
+          city: params.selectedCity || prev.city,
+          pincode: params.selectedPostalCode || prev.pincode,
+        }));
+        
+        setFormErrors(prev => ({ ...prev, address: undefined, state: undefined }));
+        setShowAddressFields(true);
+
+        // Clean up temp storage
+        await AsyncStorage.removeItem('tempReceiverData');
+      } catch (error) {
+        console.error('Error loading saved data:', error);
+      }
+    };
+    
+    loadSavedData();
+  }
+}, [params.returnFromAddressSearch, params.selectedAddress]);
+```
+
+### 4. Address Aggregation
+```typescript
+// Function to aggregate address components into a single string
+const aggregateAddress = (data: FormData): string => {
+  // If we have a complete address from search, use it
+  if (data.address) return data.address;
+  
+  // Otherwise, construct from components
+  const components = [
+    data.streetNumber,
+    data.landmark,
+    data.locality,
+    data.city,
+    data.state,
+    data.pincode
+  ].filter(Boolean);  // Remove empty/undefined values
+  
+  return components.join(', ');
+};
+```
+
+### 5. Data Return and Navigation
+```typescript
+// Handle form submission and return to new-order screen
+const handleProceed = async () => {
+  if (!validateForm()) return;
+
+  setIsLoading(true);
+  try {
+    const currentDraft = await StorageService.getOrderDraft();
+    if (!currentDraft) {
+      throw new Error('No order draft found');
+    }
+
+    // Get the complete address
+    const completeAddress = aggregateAddress(formData);
+
+    const updatedDraft: OrderDraft = {
+      ...currentDraft,
+      receiver: {
+        name: formData.name.trim(),
+        streetNumber: formData.streetNumber,
+        landmark: formData.landmark,
+        locality: formData.locality,
+        city: formData.city,
+        state: formData.state.trim(),
+        pincode: formData.pincode,
+        address: completeAddress,
+        phone: formData.phone.trim(),
+        deliveryMethod: formData.deliveryMethod,
+        pickupCenter: formData.deliveryMethod === 'pickup' ? formData.pickupCenter : undefined,
+      }
+    };
+
+    await StorageService.saveOrderDraft(updatedDraft);
+
+    // Return to new-order screen with updated data
+    router.push({
+      pathname: '/(dashboard)/customer/new-order',
+      params: {
+        receiverName: formData.name.trim(),
+        receiverAddress: completeAddress,
+        receiverState: formData.state.trim(),
+        receiverPhone: formData.phone.trim(),
+      },
+    });
+  } catch (error) {
+    console.error('Error saving receiver details:', error);
+    Alert.alert('Error', 'Failed to save receiver details. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+};
+```
+
+## Key Features
+
+### 1. State Preservation
+- Maintains form data during navigation
+- Preserves user input across address search
+- Handles cleanup appropriately
+- Uses temporary storage for navigation state
+- Preserves receiver's name and phone when returning from address search
+
+### 2. Data Validation
+- Validates required fields
+- Shows appropriate error messages
+- Prevents submission of invalid data
+- Validates phone numbers
+- Ensures address components are properly set
+
 ### 3. Address Components
-When an address is selected, the following components are populated:
 - Main address field (complete address)
 - Street/Door Number
 - Landmark
 - Locality
 - City
 - State
-- Postcode
+- Pincode
 
-### 4. Data Persistence
-- Uses AsyncStorage for temporary data storage
-- Clears storage when:
-  - Component unmounts
-  - User leaves the screen
-- Preserves data during address search navigation
+### 4. UI/UX Considerations
+- Toggle for manual address entry
+- Clear error indicators
+- Loading states
+- Intuitive navigation
+- Proper data preservation during navigation
 
-### 5. Manual Entry
-- Automatically shows when address is selected
-- Can be toggled manually
-- Pre-populated with selected address components
-- Allows manual editing of all fields
+## Implementation Notes
 
-## Phone Number Implementation
+### Address Search Integration
+1. Save current form state before navigation
+2. Handle return with proper data merging
+3. Show/hide manual entry fields based on context
+4. Preserve user input during the entire flow
+5. Maintain data consistency across navigation
 
-### Components Used
-- Uses `react-native-international-phone-number` package
-- Supports international phone number formats
-- Includes country code selection
-
-### State Management
-```typescript
-const [selectedCountry, setSelectedCountry] = useState<ICountry | null>(null);
-
-// Phone number handling
-const handlePhoneNumber = (phoneNumber: string) => {
-  // Remove non-digit characters except plus sign at start
-  const cleanNumber = phoneNumber.replace(/[^\d+]/g, '').replace(/^\+/, '');
-  setFormData(prev => ({ ...prev, phone: cleanNumber }));
-  
-  if (cleanNumber && !validatePhoneNumber(cleanNumber)) {
-    setFormErrors(prev => ({
-      ...prev,
-      phone: 'Please enter a valid phone number (10-15 digits)'
-    }));
-  } else {
-    setFormErrors(prev => {
-      const { phone, ...rest } = prev;
-      return rest;
-    });
-  }
-};
-```
-
-### Validation Rules
-- Phone numbers must be between 10-15 digits
-- Removes all non-digit characters for validation
-- Shows error message for invalid numbers
-- Required field validation
-
-### UI Components
-- Phone input container with:
-  - Country code selector with flag (left)
-  - Phone number input field (center)
-  - Select contact button (right-aligned)
-- Error message display below input
-- Styled consistent with other form inputs
-
-### Layout
-```typescript
-// Phone number input layout
-<View style={styles.inputGroup}>
-  <Text style={styles.label}>Phone Number</Text>
-  <View style={styles.phoneInputWrapper}>
-    <PhoneInput
-      value={formData.phone}
-      onChangePhoneNumber={handlePhoneNumber}
-      selectedCountry={selectedCountry}
-      onChangeSelectedCountry={setSelectedCountry}
-      defaultCountry="NG"
-      theme="light"
-      phoneInputStyles={{
-        container: styles.phoneInputContainer,
-        flagContainer: styles.flagContainer,
-        input: styles.phoneInput
-      }}
-    />
-    <TouchableOpacity 
-      style={styles.contactButton}
-      onPress={handleSelectContact}
-    >
-      <Ionicons name="people-outline" size={24} color="#007AFF" />
-    </TouchableOpacity>
-  </View>
-  {formErrors.phone && (
-    <Text style={styles.errorText}>{formErrors.phone}</Text>
-  )}
-</View>
-```
-
-### Styling
-```typescript
-const styles = StyleSheet.create({
-  phoneInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  contactButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#F0F8FF',
-  }
-});
-```
-
-### Features
-1. **International Format Support**
-   - Default country code (NG for Nigeria)
-   - Country selection with flags
-   - Automatic formatting
-
-2. **Validation**
-   - Real-time validation
-   - Length check (10-15 digits)
-   - Format verification
-   - Required field check
-
-3. **Error Handling**
-   - Clear error messages
-   - Visual error indicators
-   - Immediate feedback
-
-4. **Data Cleaning**
-   - Removes spaces and special characters
-   - Preserves plus sign for country code
-   - Consistent format for storage
-
-## Contact Selection Implementation
-
-### Components Used
-- Uses `expo-contacts` package for accessing device contacts
-- Modal-based contact picker with search functionality
-- Integrated with phone number input field
-
-### State Management
-```typescript
-const [showContactsModal, setShowContactsModal] = useState(false);
-const [contacts, setContacts] = useState<EnhancedContact[]>([]);
-const [searchQuery, setSearchQuery] = useState('');
-const [isLoadingContacts, setIsLoadingContacts] = useState(false);
-const [displayedContacts, setDisplayedContacts] = useState<EnhancedContact[]>([]);
-const [page, setPage] = useState(0);
-const [cachedContacts, setCachedContacts] = useState<EnhancedContact[]>([]);
-```
-
-### Performance Optimizations
-1. **Contact Caching**
-   - Contacts are cached after first load
-   - Subsequent opens use cached data
-   - Significantly reduces loading time
-
-2. **Pagination**
-   - Initial load of 20 contacts
-   - Load more on scroll
-   - Smooth scrolling experience
-
-3. **Search Optimization**
-   - Debounced search input (300ms)
-   - Pre-processed searchable text
-   - Case-insensitive search
-
-4. **Render Optimization**
-   - `removeClippedSubviews` enabled
-   - Fixed height items for better performance
-   - Memoized components and callbacks
-
-### Delivery Method Handling
-```typescript
-const updateFormWithContact = (contact: EnhancedContact) => {
-  setFormData(prev => {
-    const updatedForm = {
-      ...prev,
-      name: contact.name || prev.name,
-      phone: contact.phoneNumbers?.[0]?.number?.replace(/\D/g, '') || prev.phone,
-    };
-
-    // Handle address fields based on current delivery method
-    if (prev.deliveryMethod === 'delivery' && contact.addresses?.[0]) {
-      // Update address fields for delivery mode
-      const addr = contact.addresses[0];
-      // ... address field updates
-      setShowManualEntry(true);
-    } else if (prev.deliveryMethod === 'pickup') {
-      // Keep pickup center and clear address fields
-      updatedForm.address = '';
-      updatedForm.streetNumber = '';
-      updatedForm.city = '';
-      updatedForm.state = prev.state; // Preserve state
-      updatedForm.pincode = '';
-      updatedForm.pickupCenter = prev.pickupCenter || '';
-    }
-
-    return updatedForm;
-  });
-};
-```
-
-### Key Features
-1. **Mode-Aware Updates**
-   - Maintains delivery method when selecting contacts
-   - Different field updates for pickup vs delivery
-   - Preserves existing pickup center in pickup mode
-
-2. **Smart Field Population**
-   - Name and phone number always updated
-   - Address fields only updated in delivery mode
-   - State preserved in pickup mode
-
-3. **UI Consistency**
-   - Loading indicators during contact fetch
-   - Empty state handling
-   - Error messages for permissions
-
-4. **Search Features**
-   - Real-time filtering
-   - Searches both name and phone number
-   - Preserves selected mode after search
+### Data Flow
+1. Temporary storage during navigation (`tempReceiverData`)
+2. Form data persistence for current session (`receiverFormData`)
+3. Order draft storage for complete order (`orderDraft`)
+4. Cleanup on component unmount
+5. Proper data preservation during address search
 
 ### Error Handling
-```typescript
-try {
-  const { status: existingStatus } = await Contacts.getPermissionsAsync();
-  if (existingStatus !== 'granted') {
-    const { status } = await Contacts.requestPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(
-        'Permission Denied',
-        'Cannot access contacts without permission...',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Open Settings', onPress: () => Linking.openSettings() }
-        ]
-      );
-      return;
-    }
-  }
-  // ... contact loading logic
-} catch (error) {
-  console.error('Error accessing contacts:', error);
-  Alert.alert('Error', 'Failed to access contacts. Please try again later.');
-}
-```
+1. Validation of required fields
+2. Storage error handling
+3. Navigation error handling
+4. Data persistence error recovery
+5. Phone number validation
 
-### UI Components
-1. **Contact List Item**
-   - Displays name and phone number
-   - Clear visual hierarchy
-   - Touch feedback
-   - Forward chevron indicator
+### Best Practices
+1. Use TypeScript interfaces for type safety
+2. Implement proper error handling
+3. Maintain state consistency
+4. Clean up resources appropriately
+5. Preserve user input whenever possible
+6. Log important state changes for debugging
+7. Handle both manual and Google Places address entry
 
-2. **Search Bar**
-   - Icon-prefixed input
-   - Debounced input handling
-   - Clear visual styling
-   - Placeholder text
+### Address Data Flow
+1. **Google Places Search Flow**
+   - Address selected from search is stored in `formData.address`
+   - Individual components are stored in respective fields
+   - Complete address is used for display and return
 
-3. **Modal Header**
-   - Clear title
-   - Close button
-   - Consistent styling
+2. **Manual Entry Flow**
+   - Individual components are collected
+   - Aggregated into complete address on form submission
+   - Both complete address and components are stored in draft
 
-4. **Loading States**
-   - Activity indicator
-   - Loading text
-   - Centered layout
+3. **Data Return Strategy**
+   ```typescript
+   // Return data structure
+   interface ReturnData {
+     receiverName: string;
+     receiverAddress: string;    // Aggregated address
+     receiverState: string;
+     receiverPhone: string;
+   }
+
+   // Storage structure (for editing)
+   interface StoredData {
+     name: string;
+     address: string;           // Complete or aggregated address
+     state: string;
+     phone: string;
+     streetNumber?: string;     // Individual components
+     landmark?: string;
+     locality?: string;
+     city?: string;
+     pincode?: string;
+   }
+   ```
+
+### Best Practices
+1. **Address Handling**
+   - Store both complete address and components
+   - Validate address based on entry method
+   - Preserve data during navigation
+   - Clean up temporary storage appropriately
+
+2. **Data Return**
+   - Return aggregated address to new-order screen
+   - Include all necessary components in storage
+   - Handle both manual and search-based addresses consistently
+
+3. **State Management**
+   - Clear address field when switching to manual entry
+   - Preserve manual components when using search
+   - Validate address format before proceeding
+   - Maintain data consistency across navigation
 
 ### Usage Notes
-1. Contact selection preserves current delivery method
-2. Address fields are only updated in delivery mode
-3. Pickup center is preserved in pickup mode
-4. Contact search works across both modes
-5. Performance optimized for large contact lists
-
-## Implementation Details
-
-### Address Search Results Handler
-```typescript
-useEffect(() => {
-  if (params.returnFromAddressSearch === 'true' && params.selectedAddress) {
-    setFormData({
-      name: formData.name,
-      phone: formData.phone,
-      deliveryMethod: 'delivery',
-      address: params.selectedAddress || '',
-      streetNumber: params.selectedStreetNumber || '',
-      landmark: params.selectedLandmark || '',
-      locality: params.selectedLocality || '',
-      city: params.selectedCity || '',
-      state: params.selectedState || '',
-      pincode: params.selectedPostalCode || '',
-      pickupCenter: '',
-      specialInstructions: ''
-    });
-    setShowManualEntry(true);
-  }
-}, [/* dependencies */]);
-```
-
-### Storage Management
-- Immediate storage updates after address selection
-- Cleanup on component unmount
-- State preservation during navigation
-
-## Key Features
-1. **Address Overwriting**
-   - Each new search completely overwrites previous address data
-   - Preserves only name and phone number
-
-2. **Automatic Manual Entry**
-   - Shows manual entry section automatically after address selection
-   - Pre-populates all available address components
-
-3. **Data Consistency**
-   - Maintains consistency between form state and storage
-   - Handles undefined values safely
-
-4. **Memory Management**
-   - Cleans up storage when leaving screen
-   - Preserves necessary data during address search
-
-## Usage Notes
-1. Address search requires Google Places API key
-2. Manual entry is always available as fallback
-3. Form validation ensures required fields are filled
-4. Delivery method affects required fields validation
-
-## Error Handling
-- Handles API errors gracefully
-- Validates form data before proceeding
-- Shows appropriate error messages to users
-- Fallback to manual entry if needed 
+1. Handle both Google Places and manual address entry
+2. Aggregate address components consistently
+3. Validate address based on entry method
+4. Return complete data to new-order screen
+5. Preserve individual components for editing
+6. Ensure proper data preservation during navigation
+7. Handle cleanup and error cases appropriately 

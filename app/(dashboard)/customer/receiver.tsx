@@ -194,30 +194,35 @@ export default function ReceiverDetails() {
   // Update the address search return handler
   useEffect(() => {
     if (params.returnFromAddressSearch === 'true' && params.selectedAddress) {
+      console.log('Return from address search with params:', params);
       const loadSavedData = async () => {
         try {
           // Load the saved form data
           const tempData = await AsyncStorage.getItem('tempReceiverData');
           const savedData = tempData ? JSON.parse(tempData) : {};
           
-      setFormData(prev => ({
-        ...prev,
-            name: savedData.name || prev.name, // Preserve name from temp data or current state
-            phone: savedData.phone || prev.phone, // Preserve phone from temp data or current state
-            deliveryMethod: 'delivery',
-        address: params.selectedAddress || '',
-        state: params.selectedState || prev.state,
-        streetNumber: params.selectedStreetNumber || prev.streetNumber,
-        landmark: params.selectedLandmark || prev.landmark,
-        locality: params.selectedLocality || prev.locality,
-        city: params.selectedCity || prev.city,
-        pincode: params.selectedPostalCode || prev.pincode,
-      }));
-          
-      setFormErrors(prev => ({ ...prev, address: undefined, state: undefined }));
-      setShowAddressFields(true);
+          console.log('Loaded saved temp data:', savedData);
 
-          // Clean up temp storage
+          // Update form data while preserving saved fields
+          setFormData(prev => ({
+            ...prev,
+            name: savedData.name || prev.name,  // Preserve name from temp data or current state
+            phone: savedData.phone || prev.phone,  // Preserve phone from temp data or current state
+            deliveryMethod: 'delivery',
+            // Set new address data
+            address: params.selectedAddress || prev.address,
+            state: params.selectedState || prev.state,
+            streetNumber: params.selectedStreetNumber || prev.streetNumber,
+            landmark: params.selectedLandmark || prev.landmark,
+            locality: params.selectedLocality || prev.locality,
+            city: params.selectedCity || prev.city,
+            pincode: params.selectedPostalCode || prev.pincode,
+          }));
+          
+          setFormErrors(prev => ({ ...prev, address: undefined, state: undefined }));
+          setShowAddressFields(true);
+
+          // Clean up temp storage after successful update
           await AsyncStorage.removeItem('tempReceiverData');
         } catch (error) {
           console.error('Error loading saved data:', error);
@@ -366,7 +371,25 @@ export default function ReceiverDetails() {
     return Object.keys(errors).length === 0;
   };
 
-  // Update handleProceed to use validation
+  // Add the address aggregation function
+  const aggregateAddress = (data: FormData): string => {
+    // If we have a complete address from search, use it
+    if (data.address) return data.address;
+    
+    // Otherwise, construct from components
+    const components = [
+      data.streetNumber,
+      data.landmark,
+      data.locality,
+      data.city,
+      data.state,
+      data.pincode
+    ].filter(Boolean);  // Remove empty/undefined values
+    
+    return components.join(', ');
+  };
+
+  // Update handleProceed function
   const handleProceed = async () => {
     if (!validateForm()) return;
 
@@ -376,6 +399,9 @@ export default function ReceiverDetails() {
       if (!currentDraft) {
         throw new Error('No order draft found');
       }
+
+      // Get the complete address
+      const completeAddress = aggregateAddress(formData);
 
       const updatedDraft: OrderDraft = {
         ...currentDraft,
@@ -387,7 +413,7 @@ export default function ReceiverDetails() {
           city: formData.city,
           state: formData.state.trim(),
           pincode: formData.pincode,
-          address: formData.address.trim(),
+          address: completeAddress,
           phone: formData.phone.trim(),
           deliveryMethod: formData.deliveryMethod,
           pickupCenter: formData.deliveryMethod === 'pickup' ? formData.pickupCenter : undefined,
@@ -395,7 +421,17 @@ export default function ReceiverDetails() {
       };
 
       await StorageService.saveOrderDraft(updatedDraft);
-      router.push('/customer/item-details');
+
+      // Return to new-order screen with updated data
+      router.push({
+        pathname: '/(dashboard)/customer/new-order',
+        params: {
+          receiverName: formData.name.trim(),
+          receiverAddress: completeAddress,
+          receiverState: formData.state.trim(),
+          receiverPhone: formData.phone.trim(),
+        },
+      });
     } catch (error) {
       console.error('Error saving receiver details:', error);
       Alert.alert('Error', 'Failed to save receiver details. Please try again.');
