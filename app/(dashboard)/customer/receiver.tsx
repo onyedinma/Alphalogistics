@@ -152,45 +152,6 @@ export default function ReceiverDetails() {
     </View>
   ), [searchQuery]);
 
-  // Add cleanup effect at the top of the component
-  useEffect(() => {
-    // Cleanup function that runs when component unmounts
-    return () => {
-      // Clear the form data from AsyncStorage
-      const cleanup = async () => {
-        try {
-          await AsyncStorage.removeItem('orderDraft');
-        } catch (error) {
-          console.error('Error cleaning up storage:', error);
-        }
-      };
-      cleanup();
-    };
-  }, []);
-
-  // Update handleAddressSearch function
-  const handleAddressSearch = async () => {
-    try {
-      // Save current form data to AsyncStorage before navigating
-      await AsyncStorage.setItem('tempReceiverData', JSON.stringify({
-        name: formData.name,
-        phone: formData.phone,
-        deliveryMethod: formData.deliveryMethod,
-        pickupCenter: formData.pickupCenter
-      }));
-
-      router.push({
-        pathname: '/(dashboard)/customer/address-search',
-        params: {
-          returnTo: 'receiver'
-        }
-      });
-    } catch (error) {
-      console.error('Error saving temp data:', error);
-      Alert.alert('Error', 'Failed to process address search. Please try again.');
-    }
-  };
-
   // Update the address search return handler
   useEffect(() => {
     if (params.returnFromAddressSearch === 'true' && params.selectedAddress) {
@@ -201,37 +162,101 @@ export default function ReceiverDetails() {
           const tempData = await AsyncStorage.getItem('tempReceiverData');
           const savedData = tempData ? JSON.parse(tempData) : {};
           
-          console.log('Loaded saved temp data:', savedData);
+          console.log('Loaded saved data:', savedData);
 
-          // Update form data while preserving saved fields
-          setFormData(prev => ({
-            ...prev,
-            name: savedData.name || prev.name,  // Preserve name from temp data or current state
-            phone: savedData.phone || prev.phone,  // Preserve phone from temp data or current state
+          // Create the updated form data
+          const updatedFormData: FormData = {
+            name: savedData.name || formData.name,
+            phone: savedData.phone || formData.phone,
             deliveryMethod: 'delivery',
-            // Set new address data
-            address: params.selectedAddress || prev.address,
-            state: params.selectedState || prev.state,
-            streetNumber: params.selectedStreetNumber || prev.streetNumber,
-            landmark: params.selectedLandmark || prev.landmark,
-            locality: params.selectedLocality || prev.locality,
-            city: params.selectedCity || prev.city,
-            pincode: params.selectedPostalCode || prev.pincode,
-          }));
-          
-          setFormErrors(prev => ({ ...prev, address: undefined, state: undefined }));
-          setShowAddressFields(true);
+            address: params.selectedAddress || '',
+            state: params.selectedState || '',
+            streetNumber: params.selectedStreetNumber || '',
+            landmark: params.selectedLandmark || '',
+            locality: params.selectedLocality || '',
+            city: params.selectedCity || '',
+            pincode: params.selectedPostalCode || '',
+            pickupCenter: formData.pickupCenter || ''
+          };
 
-          // Clean up temp storage after successful update
+          console.log('Setting form data to:', updatedFormData);
+          
+          // Update form data
+          setFormData(updatedFormData);
+          
+          // Show address fields and clear any errors
+          setShowAddressFields(true);
+          setFormErrors({});
+
+          // Clean up temp storage
           await AsyncStorage.removeItem('tempReceiverData');
+          
+          // Save to order draft
+          const currentDraft = await StorageService.getOrderDraft();
+          if (currentDraft) {
+            const updatedDraft: OrderDraft = {
+              ...currentDraft,
+              receiver: {
+                name: savedData.name || formData.name,
+                phone: savedData.phone || formData.phone,
+                address: params.selectedAddress || '',
+                state: params.selectedState || '',
+                streetNumber: params.selectedStreetNumber || '',
+                landmark: params.selectedLandmark || '',
+                locality: params.selectedLocality || '',
+                city: params.selectedCity || '',
+                pincode: params.selectedPostalCode || '',
+                deliveryMethod: 'delivery'
+              }
+            };
+            await StorageService.saveOrderDraft(updatedDraft);
+          }
         } catch (error) {
           console.error('Error loading saved data:', error);
+          Alert.alert('Error', 'Failed to load address data');
         }
       };
       
       loadSavedData();
     }
-  }, [params.returnFromAddressSearch, params.selectedAddress]);
+  }, [params.returnFromAddressSearch, params.selectedAddress, formData.name, formData.phone, formData.pickupCenter]);
+
+  // Update cleanup effect to only remove tempReceiverData
+  useEffect(() => {
+    return () => {
+      const cleanup = async () => {
+        try {
+          await AsyncStorage.removeItem('tempReceiverData');
+        } catch (error) {
+          console.error('Error cleaning up temp storage:', error);
+        }
+      };
+      cleanup();
+    };
+  }, []);
+
+  // Update handleAddressSearch to save current form state
+  const handleAddressSearch = async () => {
+    try {
+      // Save current form data to AsyncStorage before navigating
+      const dataToSave = {
+        name: formData.name,
+        phone: formData.phone,
+        pickupCenter: formData.pickupCenter
+      };
+      
+      console.log('Saving temp data before address search:', dataToSave);
+      await AsyncStorage.setItem('tempReceiverData', JSON.stringify(dataToSave));
+
+      router.push({
+        pathname: '/(dashboard)/customer/address-search',
+        params: { returnTo: 'receiver' }
+      });
+    } catch (error) {
+      console.error('Error saving temp data:', error);
+      Alert.alert('Error', 'Failed to process address search. Please try again.');
+    }
+  };
 
   // Add a separate useEffect to handle showing manual entry
   useEffect(() => {
@@ -269,41 +294,43 @@ export default function ReceiverDetails() {
     loadSavedData();
   }, []);
 
-  // Save form data whenever it changes
+  // Remove the two separate form data saving effects and replace with one debounced effect
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
     const saveFormData = async () => {
       try {
-        const savedOrderDraft = await AsyncStorage.getItem('orderDraft');
-        const currentDraft = savedOrderDraft ? JSON.parse(savedOrderDraft) : {};
+        // Only save if we have significant data to save
+        if (!formData.name && !formData.address && !formData.phone) {
+          return;
+        }
+
+        console.log('Saving form data...');
         
-        await AsyncStorage.setItem('orderDraft', JSON.stringify({
+        // Save to order draft
+        const currentDraft = await StorageService.getOrderDraft();
+        const updatedDraft = {
           ...currentDraft,
           receiver: formData
-        }));
-      } catch (error) {
-        console.error('Error saving form data:', error);
-      }
-    };
+        };
+        await StorageService.saveOrderDraft(updatedDraft);
 
-    // Only save if we have at least one field filled
-    if (formData.name || formData.address || formData.state || formData.phone) {
-      saveFormData();
-    }
-  }, [formData]);
-
-  // Add this effect to save form data changes
-  useEffect(() => {
-    const saveFormData = async () => {
-      try {
+        // Save to temporary storage
         await AsyncStorage.setItem('receiverFormData', JSON.stringify(formData));
       } catch (error) {
         console.error('Error saving form data:', error);
       }
     };
 
-    if (formData.address || formData.name || formData.phone) {
-      saveFormData();
-    }
+    // Debounce the save operation
+    timeoutId = setTimeout(saveFormData, 1000);
+
+    // Cleanup
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, [formData]);
 
   const validatePhoneNumber = (phoneNumber: string): boolean => {
@@ -591,23 +618,6 @@ export default function ReceiverDetails() {
     };
     loadInitialData();
   }, []);
-
-  // Update cleanup effect
-  useEffect(() => {
-    return () => {
-      const cleanup = async () => {
-        try {
-          if (!params.returnFromAddressSearch) {
-            await AsyncStorage.removeItem('receiverFormData');
-            await AsyncStorage.removeItem('orderDraft');
-          }
-        } catch (error) {
-          console.error('Error cleaning up storage:', error);
-        }
-      };
-      cleanup();
-    };
-  }, [params.returnFromAddressSearch]);
 
   return (
     <View style={styles.container}>

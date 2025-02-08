@@ -375,7 +375,7 @@ export default function ItemDetailsScreen() {
 
   const [currentItem, setCurrentItem] = useState<ItemFormData>({
     name: '',
-    category: 'Electronics',
+    category: 'electronics' as CategoryType,
     subcategory: '',
     quantity: '',
     weight: '',
@@ -482,32 +482,77 @@ export default function ItemDetailsScreen() {
       if (!orderDraft) {
         throw new Error('No order draft found');
       }
+
+      // Calculate totals for the updated items list
+      const updatedItems = [...(orderDraft.items || []), newItem];
+      const { totalValue } = calculateTotals(updatedItems);
+      const deliveryFee = orderDraft.delivery?.fee || 0;
       
       const updatedDraft: OrderDraft = {
         ...orderDraft,
-        items: [...(orderDraft.items || []), newItem],
+        sender: orderDraft.sender || {
+          name: '',
+          address: '',
+          phone: '',
+          state: ''
+        },
+        receiver: orderDraft.receiver || {
+          name: '',
+          address: '',
+          phone: '',
+          state: '',
+          deliveryMethod: 'delivery'
+        },
+        delivery: {
+          scheduledPickup: orderDraft.delivery?.scheduledPickup || new Date().toISOString(),
+          vehicle: orderDraft.delivery?.vehicle || 'bike',
+          fee: deliveryFee
+        },
+        locations: orderDraft.locations || {
+          pickup: {
+            address: '',
+            city: '',
+            state: '',
+            postalCode: '',
+            country: 'Nigeria',
+            instructions: ''
+          },
+          delivery: {
+            address: '',
+            city: '',
+            state: '',
+            postalCode: '',
+            country: 'Nigeria',
+            instructions: ''
+          }
+        },
+        items: updatedItems,
         pricing: {
-          itemValue: calculateTotals([...orderDraft.items || [], newItem]).totalValue,
-          deliveryFee: orderDraft.delivery?.fee || 0,
-          total: calculateTotals([...orderDraft.items || [], newItem]).totalValue + (orderDraft.delivery?.fee || 0)
+          itemValue: totalValue,
+          deliveryFee: deliveryFee,
+          total: totalValue + deliveryFee
+        },
+        orderDetails: {
+          status: 'draft',
+          createdAt: orderDraft.orderDetails?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         }
       };
 
       await StorageService.saveOrderDraft(updatedDraft);
 
       // Update the itemList state
-      const updatedItems = [...itemList.items, newItem];
-      const { totalWeight, totalValue } = calculateTotals(updatedItems);
-      setItemList({
+      const updatedItemList = {
         items: updatedItems,
-        totalWeight,
+        totalWeight: calculateTotals(updatedItems).totalWeight,
         totalValue
-      });
+      };
+      setItemList(updatedItemList);
 
-      // Reset form
+      // Reset form after success
       setCurrentItem({
         name: '',
-        category: 'Electronics',
+        category: 'electronics' as CategoryType,
         subcategory: '',
         quantity: '',
         weight: '',
@@ -565,24 +610,28 @@ export default function ItemDetailsScreen() {
         return;
       }
 
-      if (orderDraft.items && Array.isArray(orderDraft.items)) {
-        const typedItems = orderDraft.items.map(item => {
+      // Initialize with empty array if items is undefined
+      const items = orderDraft.items || [];
+      
+      // Only process if we have items
+      if (items.length > 0) {
+        const typedItems = items.map(item => {
           const dimensions = item.dimensions || { length: '0', width: '0', height: '0' };
           return {
             name: item.name || '',
             category: item.category as CategoryType,
             subcategory: item.subcategory || '',
-            quantity: item.quantity.toString(),
-            weight: item.weight.toString(),
-            value: item.value.toString(),
+            quantity: item.quantity?.toString() || '0',
+            weight: item.weight?.toString() || '0',
+            value: item.value?.toString() || '0',
             imageUri: item.imageUri,
             isFragile: item.isFragile || false,
             requiresSpecialHandling: item.requiresSpecialHandling || false,
-            specialInstructions: item.specialInstructions,
+            specialInstructions: item.specialInstructions || '',
             dimensions: {
-              length: dimensions.length.toString(),
-              width: dimensions.width.toString(),
-              height: dimensions.height.toString()
+              length: dimensions.length?.toString() || '0',
+              width: dimensions.width?.toString() || '0',
+              height: dimensions.height?.toString() || '0'
             }
           };
         });
@@ -593,10 +642,23 @@ export default function ItemDetailsScreen() {
           totalWeight,
           totalValue
         });
+      } else {
+        // Set empty state if no items
+        setItemList({
+          items: [],
+          totalWeight: 0,
+          totalValue: 0
+        });
       }
     } catch (error) {
       console.error('Error loading items:', error);
       Alert.alert('Error', 'Failed to load items');
+      // Set empty state on error
+      setItemList({
+        items: [],
+        totalWeight: 0,
+        totalValue: 0
+      });
     }
   };
 

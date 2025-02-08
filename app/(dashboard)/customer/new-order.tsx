@@ -531,6 +531,12 @@ export default function NewOrder() {
             country: 'Nigeria',
             instructions: ''
           }
+        },
+        items: [], // Initialize empty items array
+        pricing: {  // Initialize pricing object
+          itemValue: 0,
+          deliveryFee: estimatedCost,
+          total: estimatedCost
         }
       });
       router.push('/(dashboard)/customer/item-details');
