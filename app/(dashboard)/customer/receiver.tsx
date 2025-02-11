@@ -6,9 +6,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Contacts from 'expo-contacts';
 import { StorageService } from '@/services/storage';
 import type { OrderDraft, Location } from './types';
+import { CountrySelector } from './components/CountrySelector';
+import { CountryCode, countryCodes } from './constants/countryCodes';
 
 // Add constants at the top of the file
 const CONTACTS_PER_PAGE = 20;
+
+// Add new interface for country code data
+interface LocalCountryCode {
+  code: string;
+  prefix: string;
+  format: string;
+  flag: string;
+}
 
 interface ContactDetails {
   name: string;
@@ -90,6 +100,11 @@ const ReceiverDetails: React.FC = () => {
   const [showAddressFields, setShowAddressFields] = useState(false);
   const phoneInputRef = useRef<TextInput>(null);
 
+  // Add new state for country code
+  const [selectedCountry, setSelectedCountry] = useState<LocalCountryCode>(countryCodes[0]);
+  const [showCountrySelector, setShowCountrySelector] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+
   // Memoized values
   const filteredContacts = useMemo(() => {
     const query = searchQuery.toLowerCase();
@@ -133,8 +148,19 @@ const ReceiverDetails: React.FC = () => {
     </TouchableOpacity>
   ), []);
 
-  const keyExtractor = useCallback((item: EnhancedContact) => item.id || item.name || '', []);
-  
+  // Update the keyExtractor to ensure unique keys
+  const keyExtractor = useCallback((item: EnhancedContact) => {
+    // Use a combination of multiple identifiers to ensure uniqueness
+    const uniqueId = [
+      item.id,
+      item.name,
+      item.phoneNumbers?.[0]?.number,
+      Math.random().toString(36).slice(2)
+    ].filter(Boolean).join('-');
+    
+    return uniqueId;
+  }, []);
+
   const ItemSeparator = useCallback(() => <View style={styles.separator} />, []);
   
   const getItemLayout = useCallback((data: ArrayLike<EnhancedContact> | null | undefined, index: number) => ({
@@ -333,21 +359,19 @@ const ReceiverDetails: React.FC = () => {
     let formattedPhone = phoneNumber.replace(/[^\d+]/g, '');
     
     // Handle different phone number formats
-    if (formattedPhone.startsWith('+234')) {
-      formattedPhone = formattedPhone.substring(1); // Keep 234, just remove the +
+    if (formattedPhone.startsWith(`+${selectedCountry.prefix}`)) {
+      formattedPhone = formattedPhone.substring(1); // Keep prefix, just remove the +
     } else if (formattedPhone.startsWith('0')) {
-      formattedPhone = `234${formattedPhone.substring(1)}`; // Replace 0 with 234
-    } else if (!formattedPhone.startsWith('234')) {
-      formattedPhone = `234${formattedPhone}`; // Add 234 prefix
+      formattedPhone = `${selectedCountry.prefix}${formattedPhone.substring(1)}`; // Replace 0 with prefix
+    } else if (!formattedPhone.startsWith(selectedCountry.prefix)) {
+      formattedPhone = `${selectedCountry.prefix}${formattedPhone}`; // Add prefix
     }
 
-    // Update form data
     setFormData(prev => ({
       ...prev,
       phone: formattedPhone
     }));
 
-    // Clear any previous phone errors
     setFormErrors(prev => {
       const { phone, ...rest } = prev;
       return rest;
@@ -358,9 +382,9 @@ const ReceiverDetails: React.FC = () => {
     // Remove all non-digit characters
     const digitsOnly = phoneNumber.replace(/\D/g, '');
     
-    // Check if it starts with 234 and has correct length
-    if (digitsOnly.startsWith('234')) {
-      return digitsOnly.length === 13; // 234 + 10 digits
+    // Check if it starts with country prefix and has correct length
+    if (digitsOnly.startsWith(selectedCountry.prefix)) {
+      return digitsOnly.length === (selectedCountry.prefix.length + 10); // prefix + 10 digits
     }
     
     // For numbers without country code
@@ -514,15 +538,13 @@ const ReceiverDetails: React.FC = () => {
       }
 
       // Process and cache contacts
-      const processedContacts = data
+      const processedContacts: EnhancedContact[] = data
         .filter(contact => contact.name && contact.phoneNumbers?.length)
         .map(contact => ({
           ...contact,
           searchableText: `${contact.name} ${contact.phoneNumbers?.[0]?.number || ''}`.toLowerCase()
-        }))
-        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        }));
 
-      setCachedContacts(processedContacts);
       setContacts(processedContacts);
       setDisplayedContacts(processedContacts.slice(0, CONTACTS_PER_PAGE));
       setShowContactsModal(true);
@@ -642,6 +664,71 @@ const ReceiverDetails: React.FC = () => {
 
     return formattedPhone;
   };
+
+  // Add new handlers
+  const handleCountrySelect = (country: LocalCountryCode) => {
+    setSelectedCountry(country);
+    setShowCountrySelector(false);
+    setCountrySearch('');
+    
+    // Update phone number format if needed
+    if (formData.phone) {
+      handlePhoneNumber(formData.phone);
+    }
+  };
+
+  // Update phone input render method
+  const renderPhoneInput = () => (
+    <View style={styles.inputGroup}>
+      <Text style={styles.label}>Phone Number</Text>
+      <View style={styles.phoneInputWrapper}>
+        <View style={[
+          styles.phoneInputContainer,
+          formErrors.phone && styles.inputError
+        ]}>
+          <TouchableOpacity 
+            style={styles.countryCodeButton}
+            onPress={() => setShowCountrySelector(true)}
+          >
+            <Text style={styles.countryCode}>{selectedCountry.flag} +{selectedCountry.prefix}</Text>
+            <Ionicons name="chevron-down" size={16} color="#666" />
+          </TouchableOpacity>
+          <TextInput
+            ref={phoneInputRef}
+            style={styles.phoneInputText}
+            value={formData.phone.replace(new RegExp(`^${selectedCountry.prefix}`), '')}
+            onChangeText={(text) => {
+              const digitsOnly = text.replace(/\D/g, '');
+              const phoneNumber = digitsOnly.startsWith(selectedCountry.prefix) 
+                ? digitsOnly 
+                : `${selectedCountry.prefix}${digitsOnly}`;
+              handlePhoneNumber(phoneNumber);
+            }}
+            keyboardType="phone-pad"
+            placeholder="Enter phone number"
+            placeholderTextColor="#999"
+          />
+        </View>
+        <TouchableOpacity 
+          style={styles.contactButton}
+          onPress={handleSelectContact}
+        >
+          <Ionicons name="people-outline" size={24} color="#1A1A1A" />
+        </TouchableOpacity>
+      </View>
+      {formErrors.phone && (
+        <Text style={styles.errorText}>{formErrors.phone}</Text>
+      )}
+      
+      <CountrySelector
+        visible={showCountrySelector}
+        onClose={() => setShowCountrySelector(false)}
+        onSelect={handleCountrySelect}
+        searchQuery={countrySearch}
+        onSearchChange={setCountrySearch}
+      />
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -844,41 +931,7 @@ const ReceiverDetails: React.FC = () => {
           </>
         )}
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Phone Number</Text>
-          <View style={styles.phoneInputWrapper}>
-            <View style={[
-              styles.phoneInputContainer,
-              formErrors.phone && styles.inputError
-            ]}>
-              <Text style={styles.countryCode}>+234</Text>
-              <TextInput
-                ref={phoneInputRef}
-                style={styles.phoneInputText}
-                value={formData.phone.replace(/^234/, '')}
-                onChangeText={(text) => {
-                  // Remove any non-digit characters
-                  const digitsOnly = text.replace(/\D/g, '');
-                  // Add country code if not present
-                  const phoneNumber = digitsOnly.startsWith('234') ? digitsOnly : `234${digitsOnly}`;
-                  handlePhoneNumber(phoneNumber);
-                }}
-                keyboardType="phone-pad"
-                placeholder="Enter phone number"
-                placeholderTextColor="#999"
-              />
-            </View>
-            <TouchableOpacity 
-              style={styles.contactButton}
-              onPress={handleSelectContact}
-            >
-              <Ionicons name="people-outline" size={24} color="#1A1A1A" />
-            </TouchableOpacity>
-          </View>
-          {formErrors.phone && (
-            <Text style={styles.errorText}>{formErrors.phone}</Text>
-          )}
-        </View>
+        {renderPhoneInput()}
 
         {formData.deliveryMethod === 'pickup' && (
           <View style={styles.inputGroup}>
@@ -1077,13 +1130,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
   },
-  countryCode: {
-    fontSize: 16,
-    color: '#1A1A1A',
-    marginRight: 8,
+  countryCodeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingRight: 8,
     borderRightWidth: 1,
     borderRightColor: '#E5E7EB',
+    minWidth: 90,
+  },
+  countryCode: {
+    fontSize: 16,
+    color: '#1A1A1A',
+    marginRight: 4,
   },
   phoneInputText: {
     flex: 1,
@@ -1241,10 +1299,12 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   emptyText: {
+    alignItems: 'center',
     fontSize: 16,
     color: '#666',
     textAlign: 'center',
   },
 });
+
 
 export default ReceiverDetails;
