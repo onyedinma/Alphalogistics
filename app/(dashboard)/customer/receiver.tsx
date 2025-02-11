@@ -358,15 +358,7 @@ const ReceiverDetails: React.FC = () => {
     // Remove all non-digit characters except plus sign
     let formattedPhone = phoneNumber.replace(/[^\d+]/g, '');
     
-    // Handle different phone number formats
-    if (formattedPhone.startsWith(`+${selectedCountry.prefix}`)) {
-      formattedPhone = formattedPhone.substring(1); // Keep prefix, just remove the +
-    } else if (formattedPhone.startsWith('0')) {
-      formattedPhone = `${selectedCountry.prefix}${formattedPhone.substring(1)}`; // Replace 0 with prefix
-    } else if (!formattedPhone.startsWith(selectedCountry.prefix)) {
-      formattedPhone = `${selectedCountry.prefix}${formattedPhone}`; // Add prefix
-    }
-
+    // Only keep the raw number without any formatting
     setFormData(prev => ({
       ...prev,
       phone: formattedPhone
@@ -382,13 +374,8 @@ const ReceiverDetails: React.FC = () => {
     // Remove all non-digit characters
     const digitsOnly = phoneNumber.replace(/\D/g, '');
     
-    // Check if it starts with country prefix and has correct length
-    if (digitsOnly.startsWith(selectedCountry.prefix)) {
-      return digitsOnly.length === (selectedCountry.prefix.length + 10); // prefix + 10 digits
-    }
-    
-    // For numbers without country code
-    return digitsOnly.length === 10 || digitsOnly.length === 11;
+    // Check if the number has valid length (minimum 10 digits, maximum 15 digits)
+    return digitsOnly.length >= 10 && digitsOnly.length <= 15;
   };
 
   const handleDeliveryMethodChange = (method: 'pickup' | 'delivery') => {
@@ -564,30 +551,47 @@ const ReceiverDetails: React.FC = () => {
       return;
     }
 
-    // Format the phone number
-    let formattedPhone = phoneNumber.replace(/[^\d+]/g, '');
-    
-    // Handle different phone number formats
-    if (formattedPhone.startsWith('+234')) {
-      formattedPhone = formattedPhone.substring(1); // Keep 234, just remove the +
-    } else if (formattedPhone.startsWith('0')) {
-      formattedPhone = `234${formattedPhone.substring(1)}`; // Replace 0 with 234
-    } else if (!formattedPhone.startsWith('234')) {
-      formattedPhone = `234${formattedPhone}`; // Add 234 prefix
-    }
+    // Format the phone number without adding prefix
+    const formattedPhone = phoneNumber.replace(/[^\d+]/g, '');
 
-    // Validate the formatted number
-    if (!validatePhoneNumber(formattedPhone)) {
-      Alert.alert('Invalid Phone Number', 'The selected contact has an invalid phone number format');
-      return;
+    // If there's already a name in the form, show confirmation dialog
+    if (formData.name.trim()) {
+      Alert.alert(
+        'Update Name',
+        `Do you want to replace "${formData.name}" with "${contact.name}"?`,
+        [
+          {
+            text: 'Keep Current',
+            style: 'cancel',
+            onPress: () => {
+              // Only update phone number
+              setFormData(prev => ({
+                ...prev,
+                phone: formattedPhone
+              }));
+            }
+          },
+          {
+            text: 'Update',
+            onPress: () => {
+              // Update both name and phone
+              setFormData(prev => ({
+                ...prev,
+                name: contact.name || '',
+                phone: formattedPhone
+              }));
+            }
+          }
+        ]
+      );
+    } else {
+      // If no existing name, update both name and phone
+      setFormData(prev => ({
+        ...prev,
+        name: contact.name || '',
+        phone: formattedPhone
+      }));
     }
-
-    // Update form data
-    setFormData(prev => ({
-      ...prev,
-      name: contact.name || '',
-      phone: formattedPhone
-    }));
 
     // Close the contacts modal
     setShowContactsModal(false);
@@ -650,19 +654,8 @@ const ReceiverDetails: React.FC = () => {
   }, []);
 
   const formatPhoneNumber = (phoneNumber: string): string => {
-    // Remove all non-digit characters except plus sign
-    let formattedPhone = phoneNumber.replace(/[^\d+]/g, '');
-    
-    // Handle different phone number formats
-    if (formattedPhone.startsWith('+234')) {
-      formattedPhone = formattedPhone.substring(1); // Keep 234, just remove the +
-    } else if (formattedPhone.startsWith('0')) {
-      formattedPhone = `234${formattedPhone.substring(1)}`; // Replace 0 with 234
-    } else if (!formattedPhone.startsWith('234')) {
-      formattedPhone = `234${formattedPhone}`; // Add 234 prefix
-    }
-
-    return formattedPhone;
+    // Just clean the number without adding any prefix
+    return phoneNumber.replace(/[^\d+]/g, '');
   };
 
   // Add new handlers
