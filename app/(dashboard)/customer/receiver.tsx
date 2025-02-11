@@ -61,7 +61,7 @@ interface RouteParams {
   selectedPostalCode?: string;
 }
 
-export default function ReceiverDetails() {
+const ReceiverDetails: React.FC = () => {
   const params = useLocalSearchParams<RouteParams>();
 
   // State hooks
@@ -1245,3 +1245,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+export default ReceiverDetails;
