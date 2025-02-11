@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert, Text, Linking, Modal, FlatList, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { View, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert, Text, Linking, Modal, FlatList, ActivityIndicator, Platform } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import PhoneInput, { ICountry } from 'react-native-international-phone-number';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Contacts from 'expo-contacts';
 import { StorageService } from '@/services/storage';
 import type { OrderDraft, Location } from './types';
+import PhoneInput from 'react-native-phone-number-input';
 
 // Add constants at the top of the file
 const CONTACTS_PER_PAGE = 20;
@@ -78,7 +78,6 @@ export default function ReceiverDetails() {
     deliveryMethod: 'delivery',
     pickupCenter: ''
   });
-  const [selectedCountry, setSelectedCountry] = useState<ICountry | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
@@ -90,6 +89,7 @@ export default function ReceiverDetails() {
   const [page, setPage] = useState(0);
   const [cachedContacts, setCachedContacts] = useState<EnhancedContact[]>([]);
   const [showAddressFields, setShowAddressFields] = useState(false);
+  const phoneInputRef = useRef<PhoneInput>(null);
 
   // Memoized values
   const filteredContacts = useMemo(() => {
@@ -211,7 +211,7 @@ export default function ReceiverDetails() {
             };
             await StorageService.saveOrderDraft(updatedDraft);
           }
-        } catch (error) {
+    } catch (error) {
           console.error('Error loading saved data:', error);
           Alert.alert('Error', 'Failed to load address data');
         }
@@ -238,25 +238,21 @@ export default function ReceiverDetails() {
   // Update handleAddressSearch to save current form state
   const handleAddressSearch = async () => {
     try {
-      // Save current form data to AsyncStorage before navigating
       const dataToSave = {
         name: formData.name,
         phone: formData.phone,
         pickupCenter: formData.pickupCenter
       };
-      
-      console.log('Saving temp data before address search:', dataToSave);
       await AsyncStorage.setItem('tempReceiverData', JSON.stringify(dataToSave));
-
       router.push({
         pathname: '/(dashboard)/customer/address-search',
         params: { returnTo: 'receiver' }
       });
-    } catch (error) {
+        } catch (error) {
       console.error('Error saving temp data:', error);
-      Alert.alert('Error', 'Failed to process address search. Please try again.');
-    }
-  };
+      Alert.alert('Error', 'Failed to process address search. Please try again later.');
+        }
+      };
 
   // Add a separate useEffect to handle showing manual entry
   useEffect(() => {
@@ -333,29 +329,44 @@ export default function ReceiverDetails() {
     };
   }, [formData]);
 
-  const validatePhoneNumber = (phoneNumber: string): boolean => {
-    // Remove all non-digit characters
-    const cleanNumber = phoneNumber.replace(/\D/g, '');
-    // Check if the number is between 10 and 15 digits
-    return /^[0-9]{10,15}$/.test(cleanNumber);
-  };
-
   const handlePhoneNumber = (phoneNumber: string) => {
     // Remove any non-digit characters except plus sign at the start
-    const cleanNumber = phoneNumber.replace(/[^\d+]/g, '').replace(/^\+/, '');
-    setFormData(prev => ({ ...prev, phone: cleanNumber }));
+    const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
     
-    if (cleanNumber && !validatePhoneNumber(cleanNumber)) {
-      setFormErrors(prev => ({
-        ...prev,
-        phone: 'Please enter a valid phone number (10-15 digits)'
-      }));
-    } else {
-      setFormErrors(prev => {
-        const { phone, ...rest } = prev;
-        return rest;
-      });
+    // Format the number for storage (should start with 234)
+    let formattedNumber = cleanNumber;
+    if (cleanNumber.startsWith('+')) {
+      formattedNumber = cleanNumber.substring(1); // Remove the plus
     }
+    if (formattedNumber.startsWith('0')) {
+      formattedNumber = `234${formattedNumber.substring(1)}`;
+    } else if (!formattedNumber.startsWith('234')) {
+      formattedNumber = `234${formattedNumber}`;
+    }
+
+    // Update form data
+    setFormData(prev => ({
+      ...prev,
+      phone: formattedNumber
+    }));
+
+    // Clear any previous phone errors
+    setFormErrors(prev => {
+      const { phone, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  const validatePhoneNumber = (phoneNumber: string): boolean => {
+    // Remove any non-digit characters
+    const cleanNumber = phoneNumber.replace(/\D/g, '');
+    
+    // Should be 13 digits (234 + 10 digits) for Nigerian numbers
+    if (cleanNumber.startsWith('234')) {
+      return cleanNumber.length === 13;
+    }
+    
+    return false;
   };
 
   const handleDeliveryMethodChange = (method: 'pickup' | 'delivery') => {
@@ -427,7 +438,6 @@ export default function ReceiverDetails() {
         throw new Error('No order draft found');
       }
 
-      // Get the complete address
       const completeAddress = aggregateAddress(formData);
 
       const updatedDraft: OrderDraft = {
@@ -449,7 +459,6 @@ export default function ReceiverDetails() {
 
       await StorageService.saveOrderDraft(updatedDraft);
 
-      // Return to new-order screen with updated data
       router.push({
         pathname: '/(dashboard)/customer/new-order',
         params: {
@@ -533,33 +542,57 @@ export default function ReceiverDetails() {
   };
 
   const updateFormWithContact = (contact: EnhancedContact) => {
-    setFormData(prev => {
-      const updatedForm = {
+    // Get the phone number from the contact
+    const phoneNumber = contact.phoneNumbers?.[0]?.number;
+    if (!phoneNumber) {
+      Alert.alert('Invalid Contact', 'Selected contact does not have a phone number');
+      return;
+    }
+
+    // Format the phone number - remove all non-digits except plus sign
+    let formattedPhone = phoneNumber.replace(/[^\d+]/g, '');
+    
+    // Handle different phone number formats
+    if (formattedPhone.startsWith('+234')) {
+      formattedPhone = formattedPhone.substring(1); // Keep 234, just remove the +
+    } else if (formattedPhone.startsWith('0')) {
+      formattedPhone = `234${formattedPhone.substring(1)}`; // Replace 0 with 234
+    } else if (!formattedPhone.startsWith('234')) {
+      formattedPhone = `234${formattedPhone}`; // Add 234 prefix
+    }
+
+    // Ask for confirmation if the contact name matches the form name
+    if (formData.name && formData.name.toLowerCase() === contact.name?.toLowerCase()) {
+      Alert.alert(
+        'Name Match',
+        'The selected contact has the same name as already entered. Do you want to proceed?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Proceed',
+            onPress: () => {
+              setFormData(prev => ({
+                ...prev,
+                name: contact.name || '',
+                phone: formattedPhone
+              }));
+              setShowContactsModal(false);
+            }
+          }
+        ]
+      );
+    } else {
+      // If names don't match, update form directly
+      setFormData(prev => ({
         ...prev,
-        name: contact.name || prev.name,
-        phone: contact.phoneNumbers?.[0]?.number?.replace(/\D/g, '') || prev.phone,
-      };
-
-      // Handle address fields based on current delivery method
-      if (prev.deliveryMethod === 'delivery' && contact.addresses?.[0]) {
-        const addr = contact.addresses[0];
-        const formattedAddress = [
-          addr.street,
-          addr.region,
-          addr.country
-        ].filter(Boolean).join(', ');
-
-        updatedForm.address = formattedAddress;
-        updatedForm.state = addr.region || '';
-      } else if (prev.deliveryMethod === 'pickup') {
-        // Keep pickup center and clear address fields
-        updatedForm.address = '';
-        updatedForm.state = prev.state; // Preserve state
-        updatedForm.pickupCenter = prev.pickupCenter || '';
-      }
-
-      return updatedForm;
-    });
+        name: contact.name || '',
+        phone: formattedPhone
+      }));
+      setShowContactsModal(false);
+    }
   };
 
   // Add debounce function
@@ -701,8 +734,8 @@ export default function ReceiverDetails() {
 
         {formData.deliveryMethod === 'delivery' && (
           <>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Address</Text>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Address</Text>
               <TouchableOpacity 
                 style={styles.addressInput}
                 onPress={handleAddressSearch}
@@ -735,15 +768,15 @@ export default function ReceiverDetails() {
               <>
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Street/Door Number</Text>
-                  <TextInput
+          <TextInput
                     style={styles.input}
                     value={formData.streetNumber}
                     onChangeText={(streetNumber) => {
                       setFormData(prev => ({ ...prev, streetNumber }));
                     }}
                     placeholder="Enter Street/Door Number"
-                    placeholderTextColor="#999"
-                  />
+            placeholderTextColor="#999"
+          />
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -783,24 +816,24 @@ export default function ReceiverDetails() {
                     placeholder="Enter City"
                     placeholderTextColor="#999"
                   />
-                </View>
+        </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>State</Text>
-                  <TextInput
-                    style={[styles.input, formErrors.state && styles.inputError]}
-                    value={formData.state}
-                    onChangeText={(state) => {
-                      setFormData(prev => ({ ...prev, state }));
-                      setFormErrors(prev => ({ ...prev, state: undefined }));
-                    }}
-                    placeholder="Enter State"
-                    placeholderTextColor="#999"
-                  />
-                  {formErrors.state && (
-                    <Text style={styles.errorText}>{formErrors.state}</Text>
-                  )}
-                </View>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>State</Text>
+          <TextInput
+            style={[styles.input, formErrors.state && styles.inputError]}
+            value={formData.state}
+            onChangeText={(state) => {
+              setFormData(prev => ({ ...prev, state }));
+              setFormErrors(prev => ({ ...prev, state: undefined }));
+            }}
+            placeholder="Enter State"
+            placeholderTextColor="#999"
+          />
+          {formErrors.state && (
+            <Text style={styles.errorText}>{formErrors.state}</Text>
+          )}
+        </View>
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Pincode</Text>
@@ -825,22 +858,24 @@ export default function ReceiverDetails() {
           <View style={styles.phoneInputWrapper}>
             <PhoneInput
               value={formData.phone}
-              onChangePhoneNumber={handlePhoneNumber}
-              selectedCountry={selectedCountry}
-              onChangeSelectedCountry={setSelectedCountry}
-              defaultCountry="NG"
-              theme="light"
-              phoneInputStyles={{
-                container: styles.phoneInputContainer,
-                flagContainer: styles.flagContainer,
-                input: styles.phoneInput
+              onChangeText={handlePhoneNumber}
+              defaultCode="NG"
+              containerStyle={[
+                styles.phoneInputContainer,
+                formErrors.phone && styles.inputError
+              ]}
+              textContainerStyle={styles.phoneInputTextContainer}
+              textInputStyle={styles.phoneInputText}
+              placeholder="Enter phone number"
+              textInputProps={{
+                placeholderTextColor: '#999'
               }}
             />
             <TouchableOpacity 
               style={styles.contactButton}
               onPress={handleSelectContact}
             >
-              <Ionicons name="people-outline" size={24} color="#007AFF" />
+              <Ionicons name="people-outline" size={24} color="#1A1A1A" />
             </TouchableOpacity>
           </View>
           {formErrors.phone && (
@@ -1036,26 +1071,38 @@ const styles = StyleSheet.create({
   },
   phoneInputContainer: {
     flex: 1,
+    height: 48,
+    width: '85%',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 8,
-    overflow: 'hidden',
   },
-  flagContainer: {
-    backgroundColor: '#F9FAFB',
-    borderRightWidth: 1,
-    borderRightColor: '#E5E7EB',
-  },
-  phoneInput: {
+  phoneInputTextContainer: {
     backgroundColor: '#FFFFFF',
+    height: 46,
+  },
+  phoneInputText: {
     fontSize: 15,
     color: '#000',
+    height: 46,
+  },
+  phoneInputCodeText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  phoneInputFlagButton: {
+    width: 50,
   },
   contactButton: {
-    padding: 8,
+    backgroundColor: '#FFFFFF',
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 8,
-    backgroundColor: '#F0F8FF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   proceedButton: {
     margin: 16,
@@ -1130,6 +1177,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     paddingTop: 44, // Safe area for iOS
   },
+  
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
