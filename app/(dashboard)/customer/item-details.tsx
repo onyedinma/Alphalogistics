@@ -2,11 +2,13 @@ import auth from '@react-native-firebase/auth';
 import { StorageService } from '@/services/storage';
 import { ItemDetails, OrderDraft, CategoryType } from './types';
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Platform, StyleSheet, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Platform, StyleSheet, Modal, Image } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Swipeable } from 'react-native-gesture-handler';
+import React from 'react';
 
 interface ItemList {
   items: ItemDetails[];
@@ -14,7 +16,7 @@ interface ItemList {
   totalValue: number;
 }
 
-interface ItemFormData extends Omit<ItemDetails, 'quantity' | 'weight' | 'value' | 'dimensions'> {
+interface ItemFormData extends ItemDetails {
   quantity: string;
   weight: string;
   value: string;
@@ -24,6 +26,34 @@ interface ItemFormData extends Omit<ItemDetails, 'quantity' | 'weight' | 'value'
     height: string;
   };
 }
+
+interface ImageDimensions {
+  width: number;
+  height: number;
+  fileSize: number;
+}
+
+// Add new validation constants
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_IMAGES_PER_ITEM = 3;
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+// Add helper functions
+const validateImageDimensions = async (uri: string): Promise<ImageDimensions> => {
+  return new Promise((resolve, reject) => {
+    Image.getSize(
+      uri,
+      (width: number, height: number) => {
+        // Get file size
+        fetch(uri).then(response => {
+          const fileSize = parseInt(response.headers.get('content-length') || '0');
+          resolve({ width, height, fileSize });
+        }).catch(reject);
+      },
+      reject
+    );
+  });
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -118,28 +148,63 @@ const styles = StyleSheet.create({
     color: '#1A1A1A',
     marginRight: 4,
   },
-  imageContainer: {
-    marginTop: 8,
-    alignItems: 'center',
-  },
   imagePreview: {
-    width: 200,
-    height: 200,
-    marginBottom: 8,
+    width: 100,
+    height: 100,
+    marginRight: 8,
     borderRadius: 8,
   },
-  imageSourceButton: {
+  imageContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  addImageButton: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  swipeActions: {
+    flexDirection: 'row',
+  },
+  swipeAction: {
+    width: 60,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editAction: {
+    backgroundColor: '#4A90E2',
+  },
+  duplicateAction: {
+    backgroundColor: '#67C23A',
+  },
+  deleteAction: {
+    backgroundColor: '#F56C6C',
+  },
+  sortButton: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#F5F5F5',
-    marginRight: 8,
   },
-  imageSourceText: {
+  sortIcon: {
     marginLeft: 4,
+  },
+  categoryInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 48,
+    fontSize: 15,
     color: '#1A1A1A',
-    fontSize: 14,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -178,10 +243,6 @@ const styles = StyleSheet.create({
   },
   specialHandlingTextSelected: {
     color: '#FFFFFF',
-  },
-  instructionsInput: {
-    height: 80,
-    textAlignVertical: 'top',
   },
   addButton: {
     backgroundColor: '#1A1A1A',
@@ -266,10 +327,21 @@ const styles = StyleSheet.create({
     color: '#1A1A1A',
     fontWeight: '500',
   },
-  grandTotal: {
+  continueButton: {
+    backgroundColor: '#1A1A1A',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  continueButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
-    color: '#1A1A1A',
     fontWeight: '600',
+  },
+  disabledButton: {
+    backgroundColor: '#E5E7EB',
   },
   modalContainer: {
     flex: 1,
@@ -315,31 +387,20 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginTop: 4,
   },
-  continueButton: {
-    backgroundColor: '#1A1A1A',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 24,
+  imageWrapper: {
+    position: 'relative',
   },
-  continueButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  disabledButton: {
-    backgroundColor: '#E5E7EB',
-  },
-  categoryInput: {
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    padding: 12,
-    minHeight: 48,
-    fontSize: 15,
-    color: '#1A1A1A',
+    borderRadius: 12,
+  },
+  addImageText: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#666666',
   },
 });
 
@@ -365,6 +426,9 @@ const CATEGORIES_WITH_SUBCATEGORIES: Record<CategoryType, Array<{ name: string; 
     { name: 'Miscellaneous', weightRange: { min: 0.1, max: 100, step: 0.1 } }
   ]
 };
+
+// Ensure VEHICLES can be indexed with a string
+const VEHICLES: Record<string, { maxWeight: number }> = { bike: { maxWeight: 100 }, car: { maxWeight: 500 } };
 
 export default function ItemDetailsScreen() {
   const [itemList, setItemList] = useState<ItemList>({
@@ -396,6 +460,10 @@ export default function ItemDetailsScreen() {
   const [showSubcategoryModal, setShowSubcategoryModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [itemImages, setItemImages] = useState<string[]>([]);
+  const [editingItem, setEditingItem] = useState<ItemDetails | null>(null);
+  const [sortOrder, setSortOrder] = useState<'name' | 'value' | 'weight'>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Function to handle category selection
   const handleCategorySelect = (category: CategoryType) => {
@@ -417,7 +485,7 @@ export default function ItemDetailsScreen() {
   };
 
   // Function to validate item details
-  const validateItemDetails = () => {
+  const validateItemDetails = async () => {
     const errors: string[] = [];
     
     if (!currentItem.name.trim()) {
@@ -437,6 +505,40 @@ export default function ItemDetailsScreen() {
     }
     if (!currentItem.value || Number(currentItem.value) <= 0) {
       errors.push('Valid value is required');
+    }
+
+    // Add dimension validation
+    if (currentItem.dimensions) {
+      const { length, width, height } = currentItem.dimensions;
+      if ((length && !width && !height) || (!length && width && !height) || (!length && !width && height)) {
+        errors.push('All dimensions must be provided if any are specified');
+      }
+      
+      if (length && width && height) {
+        const maxDimension = 500; // 5 meters in cm
+        if (Number(length) > maxDimension || Number(width) > maxDimension || Number(height) > maxDimension) {
+          errors.push('Maximum dimension allowed is 500cm (5m)');
+        }
+      }
+    }
+
+    // Add weight validation based on vehicle capacity
+    const orderDraft = await StorageService.getOrderDraft();
+    if (orderDraft?.delivery?.vehicle) {
+      const maxWeight = VEHICLES[orderDraft.delivery.vehicle].maxWeight;
+      const totalWeight = itemList.items.reduce((sum, item) => 
+        sum + (Number(item.weight) * Number(item.quantity)), 0);
+      const newItemWeight = Number(currentItem.weight) * Number(currentItem.quantity);
+      
+      if (editingItem) {
+        // Subtract existing item weight when editing
+        const existingWeight = Number(editingItem.weight) * Number(editingItem.quantity);
+        if ((totalWeight - existingWeight + newItemWeight) > maxWeight) {
+          errors.push(`Total weight exceeds vehicle capacity of ${maxWeight}kg`);
+        }
+      } else if ((totalWeight + newItemWeight) > maxWeight) {
+        errors.push(`Total weight exceeds vehicle capacity of ${maxWeight}kg`);
+      }
     }
 
     if (errors.length > 0) {
@@ -474,7 +576,8 @@ export default function ItemDetailsScreen() {
           length: currentItem.dimensions.length.toString(),
           width: currentItem.dimensions.width.toString(),
           height: currentItem.dimensions.height.toString()
-        } : undefined
+        } : undefined,
+        images: itemImages
       };
 
       // Get existing order draft
@@ -567,6 +670,7 @@ export default function ItemDetailsScreen() {
         }
       });
       setSelectedImage(null);
+      setItemImages([]);
 
       Alert.alert('Success', 'Item added successfully');
     } catch (error) {
@@ -711,6 +815,198 @@ export default function ItemDetailsScreen() {
       setIsLoading(false);
     }
   };
+
+  // Add image picker function with camera support
+  const handleImagePick = async () => {
+    try {
+      if (itemImages.length >= MAX_IMAGES_PER_ITEM) {
+        Alert.alert('Limit Reached', `Maximum ${MAX_IMAGES_PER_ITEM} images allowed per item`);
+        return;
+      }
+
+      Alert.alert(
+        'Add Image',
+        'Choose an option',
+        [
+          {
+            text: 'Take Photo',
+            onPress: async () => {
+              const { status } = await ImagePicker.requestCameraPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Permission Required', 'Camera access is required to take photos');
+                return;
+              }
+
+              const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                quality: 0.8,
+              });
+
+              if (!result.canceled && result.assets[0]) {
+                const image = result.assets[0];
+                const dimensions = await validateImageDimensions(image.uri);
+                
+                if (dimensions.fileSize > MAX_IMAGE_SIZE) {
+                  Alert.alert('File Too Large', 'Please select an image under 5MB');
+                  return;
+                }
+
+                setItemImages(prev => [...prev, image.uri]);
+              }
+            }
+          },
+          {
+            text: 'Choose from Gallery',
+            onPress: async () => {
+              const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Permission Required', 'Gallery access is required to select photos');
+                return;
+              }
+
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                quality: 0.8,
+              });
+
+              if (!result.canceled && result.assets[0]) {
+                const image = result.assets[0];
+                const dimensions = await validateImageDimensions(image.uri);
+                
+                if (dimensions.fileSize > MAX_IMAGE_SIZE) {
+                  Alert.alert('File Too Large', 'Please select an image under 5MB');
+                  return;
+                }
+
+                setItemImages(prev => [...prev, image.uri]);
+              }
+            }
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
+
+  // Add image removal function
+  const handleRemoveImage = (index: number) => {
+    setItemImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Add edit item function
+  const handleEditItem = (index: number) => {
+    const item = itemList.items[index];
+    setEditingItem(item);
+    setEditingIndex(index);
+    setIsEditing(true);
+    setCurrentItem({
+      name: item.name,
+      category: item.category as CategoryType,
+      subcategory: item.subcategory,
+      quantity: item.quantity.toString(),
+      weight: item.weight.toString(),
+      value: item.value.toString(),
+      isFragile: item.isFragile || false,
+      requiresSpecialHandling: item.requiresSpecialHandling || false,
+      specialInstructions: item.specialInstructions || '',
+      dimensions: item.dimensions || { length: '', width: '', height: '' }
+    });
+    setItemImages(item.images || []);
+  };
+
+  // Add duplicate item function
+  const handleDuplicateItem = (index: number) => {
+    const item = itemList.items[index];
+    const duplicatedItem = {
+      ...item,
+      name: `${item.name} (Copy)`,
+    };
+    
+    const updatedItems = [...itemList.items, duplicatedItem];
+    const { totalWeight, totalValue } = calculateTotals(updatedItems);
+    setItemList({
+      items: updatedItems,
+      totalWeight,
+      totalValue
+    });
+  };
+
+  // Add swipe to delete functionality in the render method
+  const renderSwipeableItem = (item: ItemDetails, index: number) => (
+    <Swipeable
+      renderRightActions={() => (
+        <View style={styles.swipeActions}>
+          <TouchableOpacity 
+            style={[styles.swipeAction, styles.editAction]}
+            onPress={() => handleEditItem(index)}
+          >
+            <Ionicons name="create-outline" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.swipeAction, styles.duplicateAction]}
+            onPress={() => handleDuplicateItem(index)}
+          >
+            <Ionicons name="copy-outline" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.swipeAction, styles.deleteAction]}
+            onPress={() => {
+              Alert.alert(
+                'Delete Item',
+                'Are you sure you want to delete this item?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { 
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: () => {
+                      const updatedItems = itemList.items.filter((_, i) => i !== index);
+                      setItemList(prev => ({
+                        ...prev,
+                        items: updatedItems,
+                        ...calculateTotals(updatedItems)
+                      }));
+                    }
+                  }
+                ]
+              );
+            }}
+          >
+            <Ionicons name="trash-outline" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
+    >
+      <View style={styles.itemCard}>
+        <View style={styles.itemHeader}>
+          <Text style={styles.itemName}>{item.name}</Text>
+          <Text style={styles.itemCategory}>{item.category} - {item.subcategory}</Text>
+        </View>
+        <View style={styles.itemDetails}>
+          <View style={styles.itemDetail}>
+            <Text style={styles.itemDetailLabel}>Quantity</Text>
+            <Text style={styles.itemDetailValue}>{item.quantity}</Text>
+          </View>
+          <View style={styles.itemDetail}>
+            <Text style={styles.itemDetailLabel}>Weight</Text>
+            <Text style={styles.itemDetailValue}>{item.weight} kg</Text>
+          </View>
+          <View style={styles.itemDetail}>
+            <Text style={styles.itemDetailLabel}>Value</Text>
+            <Text style={styles.itemDetailValue}>₦{item.value}</Text>
+          </View>
+        </View>
+      </View>
+    </Swipeable>
+  );
 
   return (
     <View style={styles.container}>
@@ -859,6 +1155,39 @@ export default function ItemDetailsScreen() {
             </View>
           </View>
 
+          {/* Add Image Section */}
+          <View style={styles.inputGroup}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.label}>Item Images</Text>
+              <TouchableOpacity style={styles.infoButton}>
+                <Ionicons name="information-circle-outline" size={20} color="#666" />
+                <Text style={styles.infoButtonText}>Max {MAX_IMAGES_PER_ITEM} images, 5MB each</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.imageContainer}>
+              {itemImages.map((uri, index) => (
+                <View key={index} style={styles.imageWrapper}>
+                  <Image source={{ uri }} style={styles.imagePreview} />
+                  <TouchableOpacity 
+                    style={styles.removeImageButton}
+                    onPress={() => handleRemoveImage(index)}
+                  >
+                    <Ionicons name="close-circle" size={24} color="#FF4444" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {itemImages.length < MAX_IMAGES_PER_ITEM && (
+                <TouchableOpacity 
+                  style={styles.addImageButton}
+                  onPress={handleImagePick}
+                >
+                  <Ionicons name="camera-outline" size={32} color="#666" />
+                  <Text style={styles.addImageText}>Add Image</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
           {/* Special Handling */}
           <View style={styles.inputGroup}>
             <View style={styles.sectionHeader}>
@@ -947,26 +1276,9 @@ export default function ItemDetailsScreen() {
         {itemList.items.length > 0 && (
           <View style={styles.itemList}>
             {itemList.items.map((item, index) => (
-              <View key={index} style={styles.itemCard}>
-                <View style={styles.itemHeader}>
-                  <Text style={styles.itemName}>{item.name}</Text>
-                  <Text style={styles.itemCategory}>{item.category} - {item.subcategory}</Text>
-                </View>
-                <View style={styles.itemDetails}>
-                  <View style={styles.itemDetail}>
-                    <Text style={styles.itemDetailLabel}>Quantity</Text>
-                    <Text style={styles.itemDetailValue}>{item.quantity}</Text>
-                  </View>
-                  <View style={styles.itemDetail}>
-                    <Text style={styles.itemDetailLabel}>Weight</Text>
-                    <Text style={styles.itemDetailValue}>{item.weight} kg</Text>
-                  </View>
-                  <View style={styles.itemDetail}>
-                    <Text style={styles.itemDetailLabel}>Value</Text>
-                    <Text style={styles.itemDetailValue}>₦{item.value}</Text>
-                  </View>
-                </View>
-              </View>
+              <React.Fragment key={index}>
+                {renderSwipeableItem(item, index)}
+              </React.Fragment>
             ))}
           </View>
         )}

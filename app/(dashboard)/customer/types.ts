@@ -8,6 +8,7 @@ export interface ItemDetails {
   quantity: string;
   value: string;
   imageUri?: string;
+  images?: string[];
   isFragile?: boolean;
   requiresSpecialHandling?: boolean;
   specialInstructions?: string;
