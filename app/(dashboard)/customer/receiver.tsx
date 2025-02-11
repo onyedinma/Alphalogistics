@@ -6,7 +6,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Contacts from 'expo-contacts';
 import { StorageService } from '@/services/storage';
 import type { OrderDraft, Location } from './types';
-import PhoneInput from 'react-native-phone-number-input';
 
 // Add constants at the top of the file
 const CONTACTS_PER_PAGE = 20;
@@ -89,7 +88,7 @@ const ReceiverDetails: React.FC = () => {
   const [page, setPage] = useState(0);
   const [cachedContacts, setCachedContacts] = useState<EnhancedContact[]>([]);
   const [showAddressFields, setShowAddressFields] = useState(false);
-  const phoneInputRef = useRef<PhoneInput>(null);
+  const phoneInputRef = useRef<TextInput>(null);
 
   // Memoized values
   const filteredContacts = useMemo(() => {
@@ -848,34 +847,27 @@ const ReceiverDetails: React.FC = () => {
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Phone Number</Text>
           <View style={styles.phoneInputWrapper}>
-            <PhoneInput
-              ref={phoneInputRef}
-              value={formData.phone}
-              onChangeText={handlePhoneNumber}
-              containerStyle={[
-                styles.phoneInputContainer,
-                formErrors.phone && styles.inputError
-              ]}
-              textContainerStyle={styles.phoneInputTextContainer}
-              textInputStyle={styles.phoneInputText}
-              countryPickerProps={{
-                countryCodes: ['NG'],
-                withFilter: false,
-                withFlag: true,
-                withCallingCode: true,
-                withEmoji: true,
-                onSelect: () => {},
-                withAlphaFilter: false,
-                withCountryNameButton: false,
-                withCallingCodeButton: true
-              }}
-              defaultCode="NG"
-              layout="first"
-              placeholder="Enter phone number"
-              textInputProps={{
-                placeholderTextColor: '#999'
-              }}
-            />
+            <View style={[
+              styles.phoneInputContainer,
+              formErrors.phone && styles.inputError
+            ]}>
+              <Text style={styles.countryCode}>+234</Text>
+              <TextInput
+                ref={phoneInputRef}
+                style={styles.phoneInputText}
+                value={formData.phone.replace(/^234/, '')}
+                onChangeText={(text) => {
+                  // Remove any non-digit characters
+                  const digitsOnly = text.replace(/\D/g, '');
+                  // Add country code if not present
+                  const phoneNumber = digitsOnly.startsWith('234') ? digitsOnly : `234${digitsOnly}`;
+                  handlePhoneNumber(phoneNumber);
+                }}
+                keyboardType="phone-pad"
+                placeholder="Enter phone number"
+                placeholderTextColor="#999"
+              />
+            </View>
             <TouchableOpacity 
               style={styles.contactButton}
               onPress={handleSelectContact}
@@ -1076,19 +1068,28 @@ const styles = StyleSheet.create({
   },
   phoneInputContainer: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     height: 48,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 8,
+    paddingHorizontal: 12,
   },
-  phoneInputTextContainer: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 8,
-  },
-  phoneInputText: {
+  countryCode: {
     fontSize: 16,
     color: '#1A1A1A',
+    marginRight: 8,
+    paddingRight: 8,
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+  },
+  phoneInputText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1A1A1A',
+    padding: 0,
   },
   contactButton: {
     width: 48,
