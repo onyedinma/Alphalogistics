@@ -330,24 +330,22 @@ export default function ReceiverDetails() {
   }, [formData]);
 
   const handlePhoneNumber = (phoneNumber: string) => {
-    // Remove any non-digit characters except plus sign at the start
-    const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+    // Remove all non-digit characters except plus sign
+    let formattedPhone = phoneNumber.replace(/[^\d+]/g, '');
     
-    // Format the number for storage (should start with 234)
-    let formattedNumber = cleanNumber;
-    if (cleanNumber.startsWith('+')) {
-      formattedNumber = cleanNumber.substring(1); // Remove the plus
-    }
-    if (formattedNumber.startsWith('0')) {
-      formattedNumber = `234${formattedNumber.substring(1)}`;
-    } else if (!formattedNumber.startsWith('234')) {
-      formattedNumber = `234${formattedNumber}`;
+    // Handle different phone number formats
+    if (formattedPhone.startsWith('+234')) {
+      formattedPhone = formattedPhone.substring(1); // Keep 234, just remove the +
+    } else if (formattedPhone.startsWith('0')) {
+      formattedPhone = `234${formattedPhone.substring(1)}`; // Replace 0 with 234
+    } else if (!formattedPhone.startsWith('234')) {
+      formattedPhone = `234${formattedPhone}`; // Add 234 prefix
     }
 
     // Update form data
     setFormData(prev => ({
       ...prev,
-      phone: formattedNumber
+      phone: formattedPhone
     }));
 
     // Clear any previous phone errors
@@ -358,15 +356,16 @@ export default function ReceiverDetails() {
   };
 
   const validatePhoneNumber = (phoneNumber: string): boolean => {
-    // Remove any non-digit characters
-    const cleanNumber = phoneNumber.replace(/\D/g, '');
+    // Remove all non-digit characters
+    const digitsOnly = phoneNumber.replace(/\D/g, '');
     
-    // Should be 13 digits (234 + 10 digits) for Nigerian numbers
-    if (cleanNumber.startsWith('234')) {
-      return cleanNumber.length === 13;
+    // Check if it starts with 234 and has correct length
+    if (digitsOnly.startsWith('234')) {
+      return digitsOnly.length === 13; // 234 + 10 digits
     }
     
-    return false;
+    // For numbers without country code
+    return digitsOnly.length === 10 || digitsOnly.length === 11;
   };
 
   const handleDeliveryMethodChange = (method: 'pickup' | 'delivery') => {
@@ -393,16 +392,23 @@ export default function ReceiverDetails() {
       errors.name = 'Please enter the receiver\'s name';
     }
 
-    if (!formData.address.trim()) {
-      errors.address = 'Please enter the receiver\'s address';
-    }
-
-    if (!formData.state.trim()) {
-      errors.state = 'Please select a state';
+    if (formData.deliveryMethod === 'delivery') {
+      if (!formData.address.trim()) {
+        errors.address = 'Please enter the receiver\'s address';
+      }
+      if (!formData.state.trim()) {
+        errors.state = 'Please select a state';
+      }
+    } else {
+      if (!formData.pickupCenter) {
+        errors.pickupCenter = 'Please select a pickup center';
+      }
     }
 
     if (!formData.phone.trim()) {
       errors.phone = 'Please enter a phone number';
+    } else if (!validatePhoneNumber(formData.phone)) {
+      errors.phone = 'Please enter a valid Nigerian phone number';
     }
 
     setFormErrors(errors);
@@ -429,31 +435,31 @@ export default function ReceiverDetails() {
 
   // Update handleProceed function
   const handleProceed = async () => {
-    if (!validateForm()) return;
+    if (!validateForm()) {
+      return;
+    }
 
-    setIsLoading(true);
     try {
+      setIsLoading(true);
       const currentDraft = await StorageService.getOrderDraft();
       if (!currentDraft) {
         throw new Error('No order draft found');
       }
 
-      const completeAddress = aggregateAddress(formData);
-
-      const updatedDraft: OrderDraft = {
+      const updatedDraft = {
         ...currentDraft,
         receiver: {
           name: formData.name.trim(),
+          phone: formData.phone.trim(),
+          address: formData.address.trim(),
+          state: formData.state.trim(),
+          deliveryMethod: formData.deliveryMethod,
+          pickupCenter: formData.pickupCenter,
           streetNumber: formData.streetNumber,
           landmark: formData.landmark,
           locality: formData.locality,
           city: formData.city,
-          state: formData.state.trim(),
-          pincode: formData.pincode,
-          address: completeAddress,
-          phone: formData.phone.trim(),
-          deliveryMethod: formData.deliveryMethod,
-          pickupCenter: formData.deliveryMethod === 'pickup' ? formData.pickupCenter : undefined,
+          pincode: formData.pincode
         }
       };
 
@@ -463,7 +469,7 @@ export default function ReceiverDetails() {
         pathname: '/(dashboard)/customer/new-order',
         params: {
           receiverName: formData.name.trim(),
-          receiverAddress: completeAddress,
+          receiverAddress: formData.address.trim(),
           receiverState: formData.state.trim(),
           receiverPhone: formData.phone.trim(),
         },
@@ -478,40 +484,28 @@ export default function ReceiverDetails() {
 
   // Replace handleSelectContact function
   const handleSelectContact = async () => {
-    try {
-      setIsLoadingContacts(true);
+    setIsLoadingContacts(true);
 
-      // Check if we have cached contacts
-      if (cachedContacts.length > 0) {
-        setContacts(cachedContacts);
-        setDisplayedContacts(cachedContacts.slice(0, CONTACTS_PER_PAGE));
-        setShowContactsModal(true);
-        setIsLoadingContacts(false);
+    try {
+      // Request contacts permission if not granted
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'Cannot access contacts without permission. Please enable contacts access in your phone settings to use this feature.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() }
+          ]
+        );
         return;
       }
 
-      const { status: existingStatus } = await Contacts.getPermissionsAsync();
-      
-      if (existingStatus !== 'granted') {
-        const { status } = await Contacts.requestPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert(
-            'Permission Denied',
-            'Cannot access contacts without permission. Please enable contacts access in your phone settings to use this feature.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => Linking.openSettings() }
-            ]
-          );
-          return;
-        }
-      }
-
+      // Get contacts with phone numbers
       const { data } = await Contacts.getContactsAsync({
         fields: [
           Contacts.Fields.Name,
           Contacts.Fields.PhoneNumbers,
-          Contacts.Fields.Addresses,
         ],
       });
 
@@ -549,7 +543,7 @@ export default function ReceiverDetails() {
       return;
     }
 
-    // Format the phone number - remove all non-digits except plus sign
+    // Format the phone number
     let formattedPhone = phoneNumber.replace(/[^\d+]/g, '');
     
     // Handle different phone number formats
@@ -561,38 +555,27 @@ export default function ReceiverDetails() {
       formattedPhone = `234${formattedPhone}`; // Add 234 prefix
     }
 
-    // Ask for confirmation if the contact name matches the form name
-    if (formData.name && formData.name.toLowerCase() === contact.name?.toLowerCase()) {
-      Alert.alert(
-        'Name Match',
-        'The selected contact has the same name as already entered. Do you want to proceed?',
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel'
-          },
-          {
-            text: 'Proceed',
-            onPress: () => {
-              setFormData(prev => ({
-                ...prev,
-                name: contact.name || '',
-                phone: formattedPhone
-              }));
-              setShowContactsModal(false);
-            }
-          }
-        ]
-      );
-    } else {
-      // If names don't match, update form directly
-      setFormData(prev => ({
-        ...prev,
-        name: contact.name || '',
-        phone: formattedPhone
-      }));
-      setShowContactsModal(false);
+    // Validate the formatted number
+    if (!validatePhoneNumber(formattedPhone)) {
+      Alert.alert('Invalid Phone Number', 'The selected contact has an invalid phone number format');
+      return;
     }
+
+    // Update form data
+    setFormData(prev => ({
+      ...prev,
+      name: contact.name || '',
+      phone: formattedPhone
+    }));
+
+    // Close the contacts modal
+    setShowContactsModal(false);
+
+    // Clear any previous phone errors
+    setFormErrors(prev => {
+      const { phone, ...rest } = prev;
+      return rest;
+    });
   };
 
   // Add debounce function
@@ -615,42 +598,51 @@ export default function ReceiverDetails() {
   useEffect(() => {
     const loadInitialData = async () => {
       try {
-        // Load from orderDraft first
-        const orderDraft = await StorageService.getOrderDraft();
-        const receiver = orderDraft?.receiver;
-        
-        // Load from receiverFormData (temporary storage)
+        // Load saved form data
         const savedFormData = await AsyncStorage.getItem('receiverFormData');
-        const parsedFormData = savedFormData ? JSON.parse(savedFormData) : null;
-        
-        if (receiver || parsedFormData) {
-          const data = parsedFormData || receiver;
-          setFormData({
-            name: data.name || '',
-            phone: data.phone || '',
-            address: data.address || '',
-            state: data.state || '',
-            deliveryMethod: data.deliveryMethod || 'delivery',
-            pickupCenter: data.pickupCenter || '',
-            streetNumber: data.streetNumber || '',
-            landmark: data.landmark || '',
-            locality: data.locality || '',
-            city: data.city || '',
-            pincode: data.pincode || '',
-          });
-          
-          // Show address fields if we have any address data
-          if (data.address || data.streetNumber || data.landmark || 
-              data.locality || data.city || data.pincode) {
-            setShowAddressFields(true);
-          }
+        if (savedFormData) {
+          const parsedData = JSON.parse(savedFormData);
+          setFormData(prev => ({
+            ...prev,
+            ...parsedData,
+            // Ensure phone number is properly formatted
+            phone: parsedData.phone ? formatPhoneNumber(parsedData.phone) : ''
+          }));
+        }
+
+        // Load draft data if available
+        const draft = await StorageService.getOrderDraft();
+        if (draft?.receiver?.phone || draft?.receiver?.name) {
+          setFormData(prev => ({
+            ...prev,
+            ...draft.receiver,
+            // Ensure phone number is properly formatted
+            phone: draft.receiver?.phone ? formatPhoneNumber(draft.receiver.phone) : ''
+          }));
         }
       } catch (error) {
         console.error('Error loading initial data:', error);
       }
     };
+
     loadInitialData();
   }, []);
+
+  const formatPhoneNumber = (phoneNumber: string): string => {
+    // Remove all non-digit characters except plus sign
+    let formattedPhone = phoneNumber.replace(/[^\d+]/g, '');
+    
+    // Handle different phone number formats
+    if (formattedPhone.startsWith('+234')) {
+      formattedPhone = formattedPhone.substring(1); // Keep 234, just remove the +
+    } else if (formattedPhone.startsWith('0')) {
+      formattedPhone = `234${formattedPhone.substring(1)}`; // Replace 0 with 234
+    } else if (!formattedPhone.startsWith('234')) {
+      formattedPhone = `234${formattedPhone}`; // Add 234 prefix
+    }
+
+    return formattedPhone;
+  };
 
   return (
     <View style={styles.container}>
@@ -857,15 +849,28 @@ export default function ReceiverDetails() {
           <Text style={styles.label}>Phone Number</Text>
           <View style={styles.phoneInputWrapper}>
             <PhoneInput
+              ref={phoneInputRef}
               value={formData.phone}
               onChangeText={handlePhoneNumber}
-              defaultCode="NG"
               containerStyle={[
                 styles.phoneInputContainer,
                 formErrors.phone && styles.inputError
               ]}
               textContainerStyle={styles.phoneInputTextContainer}
               textInputStyle={styles.phoneInputText}
+              countryPickerProps={{
+                countryCodes: ['NG'],
+                withFilter: false,
+                withFlag: true,
+                withCallingCode: true,
+                withEmoji: true,
+                onSelect: () => {},
+                withAlphaFilter: false,
+                withCountryNameButton: false,
+                withCallingCodeButton: true
+              }}
+              defaultCode="NG"
+              layout="first"
               placeholder="Enter phone number"
               textInputProps={{
                 placeholderTextColor: '#999'
@@ -1072,7 +1077,6 @@ const styles = StyleSheet.create({
   phoneInputContainer: {
     flex: 1,
     height: 48,
-    width: '85%',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E5E7EB',
@@ -1080,27 +1084,19 @@ const styles = StyleSheet.create({
   },
   phoneInputTextContainer: {
     backgroundColor: '#FFFFFF',
-    height: 46,
+    paddingHorizontal: 8,
   },
   phoneInputText: {
-    fontSize: 15,
-    color: '#000',
-    height: 46,
-  },
-  phoneInputCodeText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  phoneInputFlagButton: {
-    width: 50,
+    fontSize: 16,
+    color: '#1A1A1A',
   },
   contactButton: {
-    backgroundColor: '#FFFFFF',
     width: 48,
     height: 48,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
@@ -1160,10 +1156,10 @@ const styles = StyleSheet.create({
     color: '#999',
   },
   inputError: {
-    borderColor: '#FF4444',
+    borderColor: '#EF4444',
   },
   errorText: {
-    color: '#FF4444',
+    color: '#EF4444',
     fontSize: 12,
     marginTop: 4,
   },
