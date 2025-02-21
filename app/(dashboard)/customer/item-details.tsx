@@ -1,14 +1,17 @@
 import auth from '@react-native-firebase/auth';
 import { StorageService } from '@/services/storage';
 import { ItemDetails, OrderDraft, CategoryType } from './types';
-import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Platform, StyleSheet, Modal, Image } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Platform, StyleSheet, Modal, Image, Pressable, Animated } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Swipeable } from 'react-native-gesture-handler';
 import React from 'react';
+import FastImage from 'react-native-fast-image';
+import { BlurView } from 'expo-blur';
+import { COLORS, SHADOWS } from '@/constants/theme';
+import { MAX_IMAGE_SIZE, MAX_IMAGES_PER_ITEM, ACCEPTED_IMAGE_TYPES, validateImageDimensions } from '@/constants/images';
 
 interface ItemList {
   items: ItemDetails[];
@@ -33,32 +36,24 @@ interface ImageDimensions {
   fileSize: number;
 }
 
-// Add new validation constants
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_IMAGES_PER_ITEM = 3;
-const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-
-// Add helper functions
-const validateImageDimensions = async (uri: string): Promise<ImageDimensions> => {
-  return new Promise((resolve, reject) => {
-    Image.getSize(
-      uri,
-      (width: number, height: number) => {
-        // Get file size
-        fetch(uri).then(response => {
-          const fileSize = parseInt(response.headers.get('content-length') || '0');
-          resolve({ width, height, fileSize });
-        }).catch(reject);
-      },
-      reject
-    );
-  });
-};
+interface Receiver {
+  name: string;
+  address: string;
+  phone: string;
+  state: string;
+  deliveryMethod: 'delivery' | 'pickup';
+  pickupCenter?: string;
+  streetNumber?: string;
+  landmark?: string;
+  locality?: string;
+  city?: string;
+  pincode?: string;
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F7F9',
+    backgroundColor: COLORS.background,
   },
   mainContainer: {
     flex: 1,
@@ -71,15 +66,21 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
     marginBottom: 16,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1A1A1A',
+    fontSize: 24,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    marginBottom: 24,
   },
   infoBox: {
     flexDirection: 'row',
@@ -95,14 +96,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 20,
+    ...SHADOWS.medium,
     marginBottom: 24,
   },
   inputGroup: {
@@ -110,18 +107,23 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
     marginBottom: 8,
-    color: '#1A1A1A',
+    color: COLORS.text,
   },
   input: {
-    fontSize: 15,
-    color: '#1A1A1A',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    paddingVertical: 8,
-    paddingHorizontal: 0,
-    minHeight: 40,
+    fontSize: 16,
+    color: COLORS.text,
+    backgroundColor: COLORS.inputBg,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  inputFocused: {
+    borderColor: COLORS.secondary,
+    backgroundColor: COLORS.card,
   },
   inputText: {
     color: '#1A1A1A',
@@ -152,7 +154,8 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     marginRight: 8,
-    borderRadius: 8,
+    borderRadius: 12,
+    ...SHADOWS.small,
   },
   imageContainer: {
     flexDirection: 'row',
@@ -169,24 +172,6 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  swipeActions: {
-    flexDirection: 'row',
-  },
-  swipeAction: {
-    width: 60,
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  editAction: {
-    backgroundColor: '#4A90E2',
-  },
-  duplicateAction: {
-    backgroundColor: '#67C23A',
-  },
-  deleteAction: {
-    backgroundColor: '#F56C6C',
   },
   sortButton: {
     flexDirection: 'row',
@@ -229,12 +214,15 @@ const styles = StyleSheet.create({
   specialHandlingButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: '#F5F5F5',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: COLORS.inputBg,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   specialHandlingButtonSelected: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   specialHandlingText: {
     marginLeft: 8,
@@ -245,11 +233,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   addButton: {
-    backgroundColor: '#1A1A1A',
-    padding: 16,
-    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+    padding: 18,
+    borderRadius: 12,
     alignItems: 'center',
     marginTop: 24,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    ...SHADOWS.small,
   },
   addButtonText: {
     color: '#FFFFFF',
@@ -260,15 +252,13 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   itemCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 20,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    ...SHADOWS.small,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.secondary,
   },
   itemHeader: {
     flexDirection: 'row',
@@ -303,15 +293,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   totalSection: {
-    marginTop: 24,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 20,
+    ...{
+      ...SHADOWS.medium,
+      marginTop: 32,
+    },
   },
   totalRow: {
     flexDirection: 'row',
@@ -323,17 +311,18 @@ const styles = StyleSheet.create({
     color: '#666666',
   },
   totalValue: {
-    fontSize: 14,
-    color: '#1A1A1A',
-    fontWeight: '500',
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text,
   },
   continueButton: {
-    backgroundColor: '#1A1A1A',
-    padding: 16,
-    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+    padding: 20,
+    borderRadius: 16,
     alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 24,
+    marginTop: 24,
+    marginBottom: 32,
+    ...SHADOWS.medium,
   },
   continueButtonText: {
     color: '#FFFFFF',
@@ -355,6 +344,7 @@ const styles = StyleSheet.create({
     padding: 16,
     width: '80%',
     maxHeight: '80%',
+    ...SHADOWS.large,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -402,6 +392,75 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666666',
   },
+  itemCardPressed: {
+    transform: [{ scale: 0.98 }],
+    shadowOpacity: 0.05,
+  },
+  floatingMenu: {
+    position: 'absolute',
+    right: 20,
+    bottom: 100,
+    backgroundColor: COLORS.card,
+    borderRadius: 28,
+    padding: 8,
+    ...SHADOWS.large,
+  },
+  floatingMenuButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 4,
+    backgroundColor: '#F5F5F5',
+  },
+  floatingMenuButtonActive: {
+    backgroundColor: '#000',
+  },
+  imagePreviewModal: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+  },
+  imagePreviewContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewImage: {
+    width: '90%',
+    height: '70%',
+    borderRadius: 12,
+  },
+  imageActions: {
+    flexDirection: 'row',
+    position: 'absolute',
+    bottom: 40,
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    gap: 16,
+  },
+  imageActionButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemHeaderLeft: {
+    flex: 1,
+  },
+  itemActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  itemAction: {
+    padding: 4,
+  },
+  itemCardMargin: {
+    marginTop: 10,
+  },
 });
 
 const CATEGORIES_WITH_SUBCATEGORIES: Record<CategoryType, Array<{ name: string; weightRange: { min: number; max: number; step: number } }>> = {
@@ -431,6 +490,35 @@ const CATEGORIES_WITH_SUBCATEGORIES: Record<CategoryType, Array<{ name: string; 
 const VEHICLES: Record<string, { maxWeight: number }> = { bike: { maxWeight: 100 }, car: { maxWeight: 500 } };
 
 export default function ItemDetailsScreen() {
+  // Add error handling at the start of the component
+  useEffect(() => {
+    const checkDraft = async () => {
+      try {
+        const draft = await StorageService.getOrderDraft();
+        if (!draft) {
+          console.log('No draft found, redirecting...');
+          router.replace('/(dashboard)/customer/new-order');
+          return;
+        }
+        // Continue with normal component logic
+      } catch (error) {
+        console.error('Error in ItemDetails:', error);
+        Alert.alert(
+          'Error',
+          'Unable to load order details. Please try again.',
+          [
+            {
+              text: 'Go Back',
+              onPress: () => router.back()
+            }
+          ]
+        );
+      }
+    };
+    
+    checkDraft();
+  }, []);
+
   const [itemList, setItemList] = useState<ItemList>({
     items: [],
     totalWeight: 0,
@@ -464,6 +552,56 @@ export default function ItemDetailsScreen() {
   const [editingItem, setEditingItem] = useState<ItemDetails | null>(null);
   const [sortOrder, setSortOrder] = useState<'name' | 'value' | 'weight'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [showImagePreview, setShowImagePreview] = useState(false);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [showFloatingMenu, setShowFloatingMenu] = useState(true);
+  const scrollY = useRef(new Animated.Value(0)).current;
+
+  // Add floating menu animation
+  const floatingMenuAnimation = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const listener = scrollY.addListener(({ value }) => {
+      if (value > 50 && showFloatingMenu) {
+        Animated.spring(floatingMenuAnimation, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
+        setShowFloatingMenu(false);
+      } else if (value <= 50 && !showFloatingMenu) {
+        Animated.spring(floatingMenuAnimation, {
+          toValue: 1,
+          useNativeDriver: true,
+        }).start();
+        setShowFloatingMenu(true);
+      }
+    });
+
+    return () => scrollY.removeListener(listener);
+  }, [showFloatingMenu]);
+
+  // Add image preview handling
+  const handleImagePreview = (index: number) => {
+    setSelectedImageIndex(index);
+    setShowImagePreview(true);
+  };
+
+  // Add sort handling
+  const handleSort = (type: 'name' | 'value' | 'weight') => {
+    setSortOrder(type);
+    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    
+    setItemList(prev => {
+      const sortedItems = [...prev.items].sort((a, b) => {
+        const aValue = type === 'name' ? a[type] : parseFloat(a[type]);
+        const bValue = type === 'name' ? b[type] : parseFloat(b[type]);
+        return sortDirection === 'asc' ? 
+          (aValue > bValue ? 1 : -1) : 
+          (aValue < bValue ? 1 : -1);
+      });
+      return { ...prev, items: sortedItems };
+    });
+  };
 
   // Function to handle category selection
   const handleCategorySelect = (category: CategoryType) => {
@@ -485,7 +623,7 @@ export default function ItemDetailsScreen() {
   };
 
   // Function to validate item details
-  const validateItemDetails = async () => {
+  const validateItemDetails = async (): Promise<boolean> => {
     const errors: string[] = [];
     
     if (!currentItem.name.trim()) {
@@ -558,7 +696,7 @@ export default function ItemDetailsScreen() {
 
   // Function to add new item
   const handleAddItem = async () => {
-    if (!validateItemDetails()) return;
+    if (!await validateItemDetails()) return;
 
     setIsLoading(true);
     try {
@@ -580,60 +718,38 @@ export default function ItemDetailsScreen() {
         images: itemImages
       };
 
-      // Get existing order draft
       const orderDraft = await StorageService.getOrderDraft();
       if (!orderDraft) {
         throw new Error('No order draft found');
       }
 
-      // Calculate totals for the updated items list
-      const updatedItems = [...(orderDraft.items || []), newItem];
-      const { totalValue } = calculateTotals(updatedItems);
-      const deliveryFee = orderDraft.delivery?.fee || 0;
-      
+      // Fix: Ensure receiver structure is complete
+      const receiver: Receiver = {
+        name: orderDraft.receiver?.name || '',
+        address: orderDraft.receiver?.address || '',
+        phone: orderDraft.receiver?.phone || '',
+        state: orderDraft.receiver?.state || '',
+        deliveryMethod: orderDraft.receiver?.deliveryMethod || 'delivery',
+        pickupCenter: orderDraft.receiver?.pickupCenter || ''
+      };
+
       const updatedDraft: OrderDraft = {
-        ...orderDraft,
-        sender: orderDraft.sender || {
-          name: '',
-          address: '',
-          phone: '',
-          state: ''
-        },
-        receiver: orderDraft.receiver || {
-          name: '',
-          address: '',
-          phone: '',
-          state: '',
-          deliveryMethod: 'delivery'
-        },
         delivery: {
           scheduledPickup: orderDraft.delivery?.scheduledPickup || new Date().toISOString(),
           vehicle: orderDraft.delivery?.vehicle || 'bike',
-          fee: deliveryFee
+          fee: orderDraft.delivery?.fee || 0
         },
+        sender: orderDraft.sender || { name: '', address: '', phone: '', state: '' },
+        receiver,
         locations: orderDraft.locations || {
-          pickup: {
-            address: '',
-            city: '',
-            state: '',
-            postalCode: '',
-            country: 'Nigeria',
-            instructions: ''
-          },
-          delivery: {
-            address: '',
-            city: '',
-            state: '',
-            postalCode: '',
-            country: 'Nigeria',
-            instructions: ''
-          }
+          pickup: { address: '', city: '', state: '', postalCode: '', country: 'Nigeria', instructions: '' },
+          delivery: { address: '', city: '', state: '', postalCode: '', country: 'Nigeria', instructions: '' }
         },
-        items: updatedItems,
+        items: [...(orderDraft.items || []), newItem],
         pricing: {
-          itemValue: totalValue,
-          deliveryFee: deliveryFee,
-          total: totalValue + deliveryFee
+          itemValue: calculateTotals([...(orderDraft.items || []), newItem]).totalValue,
+          deliveryFee: orderDraft.delivery?.fee || 0,
+          total: calculateTotals([...(orderDraft.items || []), newItem]).totalValue + (orderDraft.delivery?.fee || 0)
         },
         orderDetails: {
           status: 'draft',
@@ -643,16 +759,14 @@ export default function ItemDetailsScreen() {
       };
 
       await StorageService.saveOrderDraft(updatedDraft);
+      
+      // Update local state
+      setItemList({
+        items: updatedDraft.items,
+        ...calculateTotals(updatedDraft.items)
+      });
 
-      // Update the itemList state
-      const updatedItemList = {
-        items: updatedItems,
-        totalWeight: calculateTotals(updatedItems).totalWeight,
-        totalValue
-      };
-      setItemList(updatedItemList);
-
-      // Reset form after success
+      // Reset form
       setCurrentItem({
         name: '',
         category: 'electronics' as CategoryType,
@@ -838,7 +952,7 @@ export default function ItemDetailsScreen() {
               }
 
               const result = await ImagePicker.launchCameraAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                mediaTypes: ['images'],
                 allowsEditing: true,
                 quality: 0.8,
               });
@@ -866,7 +980,7 @@ export default function ItemDetailsScreen() {
               }
 
               const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                mediaTypes: ['images'],
                 allowsEditing: true,
                 quality: 0.8,
               });
@@ -940,86 +1054,188 @@ export default function ItemDetailsScreen() {
   };
 
   // Add swipe to delete functionality in the render method
-  const renderSwipeableItem = (item: ItemDetails, index: number) => (
-    <Swipeable
-      renderRightActions={() => (
-        <View style={styles.swipeActions}>
-          <TouchableOpacity 
-            style={[styles.swipeAction, styles.editAction]}
-            onPress={() => handleEditItem(index)}
-          >
-            <Ionicons name="create-outline" size={24} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.swipeAction, styles.duplicateAction]}
-            onPress={() => handleDuplicateItem(index)}
-          >
-            <Ionicons name="copy-outline" size={24} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.swipeAction, styles.deleteAction]}
-            onPress={() => {
-              Alert.alert(
-                'Delete Item',
-                'Are you sure you want to delete this item?',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { 
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: () => {
-                      const updatedItems = itemList.items.filter((_, i) => i !== index);
-                      setItemList(prev => ({
-                        ...prev,
-                        items: updatedItems,
-                        ...calculateTotals(updatedItems)
-                      }));
-                    }
-                  }
-                ]
-              );
-            }}
-          >
-            <Ionicons name="trash-outline" size={24} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      )}
-    >
-      <View style={styles.itemCard}>
-        <View style={styles.itemHeader}>
-          <Text style={styles.itemName}>{item.name}</Text>
-          <Text style={styles.itemCategory}>{item.category} - {item.subcategory}</Text>
-        </View>
-        <View style={styles.itemDetails}>
-          <View style={styles.itemDetail}>
-            <Text style={styles.itemDetailLabel}>Quantity</Text>
-            <Text style={styles.itemDetailValue}>{item.quantity}</Text>
+  const renderItem = (item: ItemDetails, index: number) => {
+    return (
+      <View key={index}>
+        <View style={[styles.itemCard, index > 0 && styles.itemCardMargin]}>
+          <View style={styles.itemHeader}>
+            <View style={styles.itemHeaderLeft}>
+              <Text style={styles.itemName}>{item.name}</Text>
+              <Text style={styles.itemCategory}>{item.category} - {item.subcategory}</Text>
+            </View>
+            <View style={styles.itemActions}>
+              <TouchableOpacity 
+                style={styles.itemAction}
+                onPress={() => handleEditItem(index)}
+              >
+                <Ionicons name="create-outline" size={24} color="#666" />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.itemAction}
+                onPress={() => handleDuplicateItem(index)}
+              >
+                <Ionicons name="copy-outline" size={24} color="#666" />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.itemAction}
+                onPress={() => {
+                  Alert.alert(
+                    'Delete Item',
+                    'Are you sure you want to delete this item?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { 
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => {
+                          const updatedItems = itemList.items.filter((_, i) => i !== index);
+                          setItemList(prev => ({
+                            ...prev,
+                            items: updatedItems,
+                            ...calculateTotals(updatedItems)
+                          }));
+                        }
+                      }
+                    ]
+                  );
+                }}
+              >
+                <Ionicons name="trash-outline" size={24} color="#FF4444" />
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={styles.itemDetail}>
-            <Text style={styles.itemDetailLabel}>Weight</Text>
-            <Text style={styles.itemDetailValue}>{item.weight} kg</Text>
-          </View>
-          <View style={styles.itemDetail}>
-            <Text style={styles.itemDetailLabel}>Value</Text>
-            <Text style={styles.itemDetailValue}>₦{item.value}</Text>
+          <View style={styles.itemDetails}>
+            <View style={styles.itemDetail}>
+              <Text style={styles.itemDetailLabel}>Quantity</Text>
+              <Text style={styles.itemDetailValue}>{item.quantity}</Text>
+            </View>
+            <View style={styles.itemDetail}>
+              <Text style={styles.itemDetailLabel}>Weight</Text>
+              <Text style={styles.itemDetailValue}>{item.weight} kg</Text>
+            </View>
+            <View style={styles.itemDetail}>
+              <Text style={styles.itemDetailLabel}>Value</Text>
+              <Text style={styles.itemDetailValue}>₦{item.value}</Text>
+            </View>
           </View>
         </View>
       </View>
-    </Swipeable>
+    );
+  };
+
+  // Add floating menu component
+  const FloatingMenu = () => (
+    <View style={styles.floatingMenu}>
+      <TouchableOpacity
+        style={[
+          styles.floatingMenuButton,
+          sortOrder === 'name' && styles.floatingMenuButtonActive
+        ]}
+        onPress={() => handleSort('name')}
+      >
+        <Ionicons
+          name="text"
+          size={24}
+          color={sortOrder === 'name' ? '#fff' : '#666'}
+        />
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[
+          styles.floatingMenuButton,
+          sortOrder === 'value' && styles.floatingMenuButtonActive
+        ]}
+        onPress={() => handleSort('value')}
+      >
+        <Ionicons
+          name="cash"
+          size={24}
+          color={sortOrder === 'value' ? '#fff' : '#666'}
+        />
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[
+          styles.floatingMenuButton,
+          sortOrder === 'weight' && styles.floatingMenuButtonActive
+        ]}
+        onPress={() => handleSort('weight')}
+      >
+        <Ionicons
+          name="scale"
+          size={24}
+          color={sortOrder === 'weight' ? '#fff' : '#666'}
+        />
+      </TouchableOpacity>
+    </View>
   );
 
+  // Add image preview modal
+  const ImagePreviewModal = () => (
+    <Modal
+      visible={showImagePreview}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowImagePreview(false)}
+    >
+      <BlurView intensity={100} style={styles.imagePreviewModal}>
+        <View style={styles.imagePreviewContent}>
+          <FastImage
+            source={{ uri: itemImages[selectedImageIndex] }}
+            style={styles.previewImage}
+            resizeMode={FastImage.resizeMode.contain}
+          />
+          <View style={styles.imageActions}>
+            <TouchableOpacity
+              style={styles.imageActionButton}
+              onPress={() => setSelectedImageIndex(prev => 
+                prev > 0 ? prev - 1 : itemImages.length - 1
+              )}
+            >
+              <Ionicons name="chevron-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.imageActionButton}
+              onPress={() => setShowImagePreview(false)}
+            >
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.imageActionButton}
+              onPress={() => setSelectedImageIndex(prev =>
+                prev < itemImages.length - 1 ? prev + 1 : 0
+              )}
+            >
+              <Ionicons name="chevron-forward" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </BlurView>
+    </Modal>
+  );
+
+  // Update the main ScrollView to use Animated.ScrollView
   return (
     <View style={styles.container}>
       <Stack.Screen
         options={{
           title: 'Item Details',
           headerShadowVisible: false,
+          headerStyle: {
+            backgroundColor: COLORS.background,
+          },
+          headerLargeTitle: true,
         }}
       />
 
-      <ScrollView style={styles.mainContainer} contentContainerStyle={styles.contentContainer}>
+      <ScrollView
+        style={[styles.mainContainer, { backgroundColor: COLORS.background }]}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Add Item</Text>
+          <Text style={styles.headerTitle}>Add New Item</Text>
+          <Text style={styles.headerSubtitle}>
+            Enter the details of the item you want to ship
+          </Text>
         </View>
 
         <View style={styles.infoBox}>
@@ -1275,11 +1491,7 @@ export default function ItemDetailsScreen() {
         {/* Item List */}
         {itemList.items.length > 0 && (
           <View style={styles.itemList}>
-            {itemList.items.map((item, index) => (
-              <React.Fragment key={index}>
-                {renderSwipeableItem(item, index)}
-              </React.Fragment>
-            ))}
+            {itemList.items.map((item, index) => renderItem(item, index))}
           </View>
         )}
 
@@ -1310,15 +1522,18 @@ export default function ItemDetailsScreen() {
         )}
       </ScrollView>
 
+      <FloatingMenu />
+      <ImagePreviewModal />
+
       {/* Category Selection Modal */}
       <Modal
         visible={showCategoryModal}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowCategoryModal(false)}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
+        <BlurView intensity={100} style={styles.modalContainer}>
+          <View style={[styles.modalContent, SHADOWS.large]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Category</Text>
               <TouchableOpacity 
@@ -1340,18 +1555,18 @@ export default function ItemDetailsScreen() {
               ))}
             </ScrollView>
           </View>
-        </View>
+        </BlurView>
       </Modal>
 
       {/* Subcategory Selection Modal */}
       <Modal
         visible={showSubcategoryModal}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowSubcategoryModal(false)}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
+        <BlurView intensity={100} style={styles.modalContainer}>
+          <View style={[styles.modalContent, SHADOWS.large]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Subcategory</Text>
               <TouchableOpacity 
@@ -1376,7 +1591,7 @@ export default function ItemDetailsScreen() {
               ))}
             </ScrollView>
           </View>
-        </View>
+        </BlurView>
       </Modal>
     </View>
   );

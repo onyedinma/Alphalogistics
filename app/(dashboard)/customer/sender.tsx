@@ -120,55 +120,19 @@ export default function SenderDetails() {
     }
   };
 
+  const [isContactPickerOpen, setIsContactPickerOpen] = useState(false);
+
   const handleContactSelect = async () => {
+    if (isContactPickerOpen) {
+      Alert.alert('Please wait', 'Contact picker is already open');
+      return;
+    }
+
     try {
+      setIsContactPickerOpen(true);
       const { status } = await Contacts.requestPermissionsAsync();
-      if (status === 'granted') {
-        const { data } = await Contacts.getContactsAsync({
-          fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers],
-        });
-
-        if (data.length > 0) {
-          // Filter contacts with phone numbers and sort by name
-          const contactsWithPhone = data
-            .filter(contact => contact.phoneNumbers && contact.phoneNumbers.length > 0)
-            .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-
-          if (contactsWithPhone.length > 0) {
-            try {
-              // Open contact picker
-              const contact = await Contacts.presentContactPickerAsync();
-
-              if (contact) {
-                // Get the first phone number
-                const phoneNumber = contact.phoneNumbers?.[0]?.number;
-                if (phoneNumber) {
-                  // Clean the phone number (remove spaces, dashes, etc.)
-                  const cleanedNumber = phoneNumber.replace(/\D/g, '');
-                  setFormData(prev => ({
-                    ...prev,
-                    name: contact.name || prev.name,
-                    phone: cleanedNumber
-                  }));
-                  setFormErrors(prev => ({ ...prev, phone: undefined, name: undefined }));
-                }
-              }
-            } catch (pickerError: any) {
-              if (typeof pickerError?.message === 'string' && 
-                  pickerError.message.includes('Different contact picking in progress')) {
-                Alert.alert('Error', 'Another contact picker is already open. Please try again.');
-              } else {
-                Alert.alert('Error', 'Failed to open contact picker. Please try again.');
-              }
-              console.error('Contact picker error:', pickerError);
-            }
-          } else {
-            Alert.alert('No Contacts', 'No contacts with phone numbers found.');
-          }
-        } else {
-          Alert.alert('No Contacts', 'No contacts found on your device.');
-        }
-      } else {
+      
+      if (status !== 'granted') {
         Alert.alert(
           'Permission Required',
           'Please grant access to contacts to use this feature.',
@@ -177,10 +141,49 @@ export default function SenderDetails() {
             { text: 'Open Settings', onPress: () => Linking.openSettings() }
           ]
         );
+        return;
       }
-    } catch (error) {
-      console.error('Error accessing contacts:', error);
-      Alert.alert('Error', 'Failed to access contacts. Please try again.');
+
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers],
+      });
+
+      if (data.length === 0) {
+        Alert.alert('No Contacts', 'No contacts found on your device.');
+        return;
+      }
+
+      // Filter contacts with phone numbers and sort by name
+      const contactsWithPhone = data
+        .filter(contact => contact.phoneNumbers && contact.phoneNumbers.length > 0)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+      if (contactsWithPhone.length === 0) {
+        Alert.alert('No Contacts', 'No contacts with phone numbers found.');
+        return;
+      }
+
+      const contact = await Contacts.presentContactPickerAsync();
+      
+      if (contact && contact.phoneNumbers?.[0]?.number) {
+        // Clean the phone number (remove spaces, dashes, etc.)
+        const cleanedNumber = contact.phoneNumbers[0].number.replace(/\D/g, '');
+        setFormData(prev => ({
+          ...prev,
+          name: contact.name || prev.name,
+          phone: cleanedNumber
+        }));
+        setFormErrors(prev => ({ ...prev, phone: undefined, name: undefined }));
+      }
+    } catch (error: any) {
+      console.error('Contact picker error:', error);
+      if (error?.message?.includes('Different contact picking in progress')) {
+        Alert.alert('Error', 'Another contact picker is already open. Please wait and try again.');
+      } else {
+        Alert.alert('Error', 'Failed to access contacts. Please try again.');
+      }
+    } finally {
+      setIsContactPickerOpen(false);
     }
   };
 
