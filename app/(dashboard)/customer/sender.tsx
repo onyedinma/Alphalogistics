@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -36,9 +37,20 @@ interface SearchParams {
   returnFromAddressSearch?: string;
 }
 
+const PHONE_REGEX = /^[0-9]{10,15}$/;
+const PHONE_ERROR_MESSAGE = 'Please enter a valid phone number (10-15 digits)';
+
 const validatePhoneNumber = (phoneNumber: string): boolean => {
   const cleanNumber = phoneNumber.replace(/\D/g, '');
-  return /^[0-9]{10,15}$/.test(cleanNumber);
+  return PHONE_REGEX.test(cleanNumber);
+};
+
+const formatPhoneNumber = (phoneNumber: string): string => {
+  const cleanNumber = phoneNumber.replace(/\D/g, '');
+  if (cleanNumber.length <= 10) {
+    return cleanNumber.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1-$2-$3');
+  }
+  return cleanNumber;
 };
 
 export default function SenderDetails() {
@@ -51,59 +63,62 @@ export default function SenderDetails() {
   });
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isContactPickerOpen, setIsContactPickerOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Initial data loading
   useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        const orderDraft = await AsyncStorage.getItem('orderDraft');
-        if (orderDraft) {
-          const parsedDraft = JSON.parse(orderDraft);
-          if (parsedDraft.sender) {
-            setFormData(prev => ({
-              ...prev,
-              ...parsedDraft.sender
-            }));
-          }
-        }
-      } catch (error) {
-        console.error('Error loading initial data:', error);
-      }
-    };
     loadInitialData();
   }, []);
 
-  // Handle address search return
-  useEffect(() => {
-    if (params.returnFromAddressSearch === 'true' && params.selectedAddress) {
-      const loadTempData = async () => {
-        try {
-          const tempData = await AsyncStorage.getItem('tempSenderData');
-          const parsedTempData = tempData ? JSON.parse(tempData) : {};
-          
+  const loadInitialData = async () => {
+    try {
+      setIsLoading(true);
+      const orderDraft = await AsyncStorage.getItem('orderDraft');
+      if (orderDraft) {
+        const parsedDraft = JSON.parse(orderDraft);
+        if (parsedDraft.sender) {
           setFormData(prev => ({
             ...prev,
-            ...parsedTempData, // Restore name and phone
-            address: params.selectedAddress || '',
-            state: params.selectedState || prev.state
+            ...parsedDraft.sender
           }));
-          
-          setFormErrors(prev => ({ ...prev, address: undefined, state: undefined }));
-          
-          // Clean up temp storage
-          await AsyncStorage.removeItem('tempSenderData');
-        } catch (error) {
-          console.error('Error loading temp data:', error);
         }
-      };
-      
-      loadTempData();
+      }
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+      Alert.alert('Error', 'Failed to load saved data. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (params.returnFromAddressSearch === 'true' && params.selectedAddress) {
+      handleAddressSearchReturn();
     }
   }, [params.returnFromAddressSearch, params.selectedAddress, params.selectedState]);
 
+  const handleAddressSearchReturn = async () => {
+    try {
+      const tempData = await AsyncStorage.getItem('tempSenderData');
+      const parsedTempData = tempData ? JSON.parse(tempData) : {};
+      
+      setFormData(prev => ({
+        ...prev,
+        ...parsedTempData,
+        address: params.selectedAddress || '',
+        state: params.selectedState || prev.state
+      }));
+      
+      setFormErrors(prev => ({ ...prev, address: undefined, state: undefined }));
+      await AsyncStorage.removeItem('tempSenderData');
+    } catch (error) {
+      console.error('Error handling address search return:', error);
+      Alert.alert('Error', 'Failed to process address data');
+    }
+  };
+
   const handleAddressSearch = async () => {
     try {
-      // Save current form data to AsyncStorage before navigating
       await AsyncStorage.setItem('tempSenderData', JSON.stringify({
         name: formData.name,
         phone: formData.phone
@@ -117,10 +132,9 @@ export default function SenderDetails() {
       });
     } catch (error) {
       console.error('Error saving temp data:', error);
+      Alert.alert('Error', 'Failed to initiate address search');
     }
   };
-
-  const [isContactPickerOpen, setIsContactPickerOpen] = useState(false);
 
   const handleContactSelect = async () => {
     if (isContactPickerOpen) {
@@ -148,51 +162,76 @@ export default function SenderDetails() {
         fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers],
       });
 
-      if (data.length === 0) {
+      if (!data?.length) {
         Alert.alert('No Contacts', 'No contacts found on your device.');
-        return;
-      }
-
-      // Filter contacts with phone numbers and sort by name
-      const contactsWithPhone = data
-        .filter(contact => contact.phoneNumbers && contact.phoneNumbers.length > 0)
-        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-
-      if (contactsWithPhone.length === 0) {
-        Alert.alert('No Contacts', 'No contacts with phone numbers found.');
         return;
       }
 
       const contact = await Contacts.presentContactPickerAsync();
       
-      if (contact && contact.phoneNumbers?.[0]?.number) {
-        // Clean the phone number (remove spaces, dashes, etc.)
+      if (contact?.phoneNumbers?.[0]?.number) {
         const cleanedNumber = contact.phoneNumbers[0].number.replace(/\D/g, '');
         setFormData(prev => ({
           ...prev,
           name: contact.name || prev.name,
-          phone: cleanedNumber
+          phone: formatPhoneNumber(cleanedNumber)
         }));
         setFormErrors(prev => ({ ...prev, phone: undefined, name: undefined }));
       }
     } catch (error: any) {
       console.error('Contact picker error:', error);
       if (error?.message?.includes('Different contact picking in progress')) {
-        Alert.alert('Error', 'Another contact picker is already open. Please wait and try again.');
+        Alert.alert('Error', 'Another contact picker is already open');
       } else {
-        Alert.alert('Error', 'Failed to access contacts. Please try again.');
+        Alert.alert('Error', 'Failed to access contacts');
       }
     } finally {
       setIsContactPickerOpen(false);
     }
   };
 
-  // Handle form submission
+  const handlePhoneChange = (phone: string) => {
+    const formattedPhone = formatPhoneNumber(phone);
+    setFormData(prev => ({ ...prev, phone: formattedPhone }));
+    setFormErrors(prev => ({ ...prev, phone: undefined }));
+  };
+
+  const validateForm = (): boolean => {
+    const errors: FormErrors = {};
+    let isValid = true;
+
+    if (!formData.name.trim()) {
+      errors.name = 'Please enter the sender\'s name';
+      isValid = false;
+    }
+
+    if (!formData.address.trim()) {
+      errors.address = 'Please enter the sender\'s address';
+      isValid = false;
+    }
+
+    if (!formData.state.trim()) {
+      errors.state = 'Please select a state';
+      isValid = false;
+    }
+
+    if (!formData.phone.trim()) {
+      errors.phone = 'Please enter a phone number';
+      isValid = false;
+    } else if (!validatePhoneNumber(formData.phone)) {
+      errors.phone = PHONE_ERROR_MESSAGE;
+      isValid = false;
+    }
+
+    setFormErrors(errors);
+    return isValid;
+  };
+
   const handleProceed = async () => {
     if (!validateForm()) return;
 
-    setIsLoading(true);
     try {
+      setIsSaving(true);
       const savedOrderDraft = await AsyncStorage.getItem('orderDraft');
       const currentDraft = savedOrderDraft ? JSON.parse(savedOrderDraft) : {};
       
@@ -220,40 +259,26 @@ export default function SenderDetails() {
       });
     } catch (error) {
       console.error('Error saving sender details:', error);
-      Alert.alert('Error', 'Failed to save sender details. Please try again.');
+      Alert.alert('Error', 'Failed to save sender details');
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
-  // Validate form fields
-  const validateForm = () => {
-    const errors: FormErrors = {};
-
-    if (!formData.name.trim()) {
-      errors.name = 'Please enter the sender\'s name';
-    }
-
-    if (!formData.address.trim()) {
-      errors.address = 'Please enter the sender\'s address';
-    }
-
-    if (!formData.state.trim()) {
-      errors.state = 'Please select a state';
-    }
-
-    if (!formData.phone.trim()) {
-      errors.phone = 'Please enter a phone number';
-    } else if (!validatePhoneNumber(formData.phone)) {
-      errors.phone = 'Please enter a valid phone number';
-    }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#000" />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <Stack.Screen
         options={{
           title: "Sender's Details",
@@ -273,6 +298,7 @@ export default function SenderDetails() {
           </Text>
         </View>
 
+        <View style={styles.form}>
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Sender's Name</Text>
             <TextInput
@@ -282,8 +308,8 @@ export default function SenderDetails() {
                 setFormData(prev => ({ ...prev, name }));
                 setFormErrors(prev => ({ ...prev, name: undefined }));
               }}
-            placeholder="Enter Sender's Name"
-            placeholderTextColor="#999"
+              placeholder="Enter Sender's Name"
+              placeholderTextColor="#999"
             />
             {formErrors.name && (
               <Text style={styles.errorText}>{formErrors.name}</Text>
@@ -296,10 +322,10 @@ export default function SenderDetails() {
               style={[styles.addressInput, formErrors.address && styles.inputError]} 
               onPress={handleAddressSearch}
             >
-            <Text style={[
+              <Text style={[
                 styles.addressText,
                 !formData.address && styles.placeholderText
-            ]}>
+              ]}>
                 {formData.address || 'Search for address'}
               </Text>
               <Ionicons name="search-outline" size={20} color="#4A90E2" />
@@ -311,17 +337,13 @@ export default function SenderDetails() {
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>State</Text>
-          <TextInput
-            style={[styles.input, formErrors.state && styles.inputError]}
-            placeholder="Enter state"
-            value={formData.state}
-            onChangeText={(state) => {
-              setFormData(prev => ({ ...prev, state }));
-              setFormErrors(prev => ({ ...prev, state: undefined }));
-            }}
-            editable={false}
-            placeholderTextColor="#999"
-          />
+            <TextInput
+              style={[styles.input, formErrors.state && styles.inputError]}
+              placeholder="Enter state"
+              value={formData.state}
+              editable={false}
+              placeholderTextColor="#999"
+            />
             {formErrors.state && (
               <Text style={styles.errorText}>{formErrors.state}</Text>
             )}
@@ -330,43 +352,44 @@ export default function SenderDetails() {
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Phone Number</Text>
             <View style={styles.phoneInputWrapper}>
-            <TextInput
-              style={[styles.phoneInput, formErrors.phone && styles.inputError]}
-              placeholder="Enter phone number"
+              <TextInput
+                style={[styles.phoneInput, formErrors.phone && styles.inputError]}
+                placeholder="Enter phone number"
                 value={formData.phone}
-              onChangeText={(phone) => {
-                setFormData(prev => ({ ...prev, phone }));
-                setFormErrors(prev => ({ ...prev, phone: undefined }));
-              }}
-              keyboardType="phone-pad"
-              placeholderTextColor="#999"
+                onChangeText={handlePhoneChange}
+                keyboardType="phone-pad"
+                placeholderTextColor="#999"
               />
               <TouchableOpacity 
-                style={styles.contactButton}
+                style={[styles.contactButton, isContactPickerOpen && styles.contactButtonDisabled]}
                 onPress={handleContactSelect}
+                disabled={isContactPickerOpen}
               >
-                <Ionicons name="people-outline" size={24} color="#007AFF" />
+                <Ionicons name="people-outline" size={24} color={isContactPickerOpen ? "#999" : "#007AFF"} />
               </TouchableOpacity>
             </View>
             {formErrors.phone && (
               <Text style={styles.errorText}>{formErrors.phone}</Text>
             )}
           </View>
+        </View>
       </ScrollView>
 
-          <TouchableOpacity 
-            style={[
-              styles.proceedButton,
-              (!formData.name || !formData.address || !formData.state || !formData.phone) && styles.disabledButton
-            ]} 
-            onPress={handleProceed}
-            disabled={!formData.name || !formData.address || !formData.state || !formData.phone}
-          >
-            <Text style={styles.proceedButtonText}>
-              {isLoading ? 'Saving...' : 'Proceed'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+      <TouchableOpacity 
+        style={[
+          styles.proceedButton,
+          (!formData.name || !formData.address || !formData.state || !formData.phone || isSaving) && styles.disabledButton
+        ]} 
+        onPress={handleProceed}
+        disabled={!formData.name || !formData.address || !formData.state || !formData.phone || isSaving}
+      >
+        {isSaving ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.proceedButtonText}>Proceed</Text>
+        )}
+      </TouchableOpacity>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -374,6 +397,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#666',
   },
   content: {
     flex: 1,
@@ -403,6 +437,9 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 14,
   },
+  form: {
+    flex: 1,
+  },
   inputGroup: {
     marginBottom: 16,
   },
@@ -425,6 +462,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#000',
   },
+  inputError: {
+    borderColor: '#DC2626',
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 12,
+    marginTop: 4,
+  },
   addressInput: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -433,6 +478,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#F5F5F5',
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   addressText: {
     flex: 1,
@@ -464,28 +511,26 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
+    width: 48,
+    height: 48,
+  },
+  contactButtonDisabled: {
+    backgroundColor: '#F5F5F5',
+    opacity: 0.7,
   },
   proceedButton: {
-    margin: 16,
-    backgroundColor: '#000',
+    backgroundColor: '#007AFF',
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
+    margin: 16,
   },
   proceedButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
   disabledButton: {
     backgroundColor: '#E5E7EB',
-  },
-  inputError: {
-    borderColor: '#FF4444',
-  },
-  errorText: {
-    color: '#FF4444',
-    fontSize: 12,
-    marginTop: 4,
   },
 });
