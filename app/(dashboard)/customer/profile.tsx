@@ -5,7 +5,7 @@ import { ThemedText } from '@/components/ThemedText';
 import { Ionicons } from '@expo/vector-icons';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
-import { BlurView } from 'expo-blur';
+
 
 interface ProfileSection {
   id: string;
@@ -142,10 +142,13 @@ export default function Profile() {
         options={{
           title: 'Profile',
           headerTransparent: true,
-          headerBlurEffect: 'regular',
           headerStyle: {
-            backgroundColor: 'rgba(255,255,255,0.8)',
+            backgroundColor: '#ffffff',
+            elevation: 0,
+            shadowOpacity: 0
           },
+          headerBlurEffect: 'light',
+          backgroundColor: 'rgba(255,255,255,0.8)',
           headerShadowVisible: false,
         }}
       />

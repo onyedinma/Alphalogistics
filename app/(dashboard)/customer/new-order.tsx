@@ -512,7 +512,7 @@ export default function NewOrder() {
         sender: senderDetails,
         receiver: {
           ...receiverDetails,
-          deliveryMethod: 'delivery'
+          deliveryMethod: receiverDetails.deliveryMethod || 'delivery'
         },
         locations: {
           pickup: {
@@ -539,10 +539,12 @@ export default function NewOrder() {
           total: estimatedCost
         }
       });
+
+      // Navigate to item-details screen
       router.push('/(dashboard)/customer/item-details');
     } catch (error) {
-      console.error('Error saving order details:', error);
-      Alert.alert('Error', 'Failed to save order details. Please try again.');
+      console.error('Error saving order data:', error);
+      Alert.alert('Error', 'Failed to save order data. Please try again.');
     } finally {
       setIsLoading(false);
     }

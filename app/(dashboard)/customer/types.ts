@@ -4,18 +4,18 @@ export interface ItemDetails {
   category: string;
   subcategory: string;
   name: string;
-  weight: string;
-  quantity: string;
-  value: string;
+  weight: number;
+  quantity: number;
+  value: number;
   imageUri?: string;
   images?: string[];
   isFragile?: boolean;
   requiresSpecialHandling?: boolean;
   specialInstructions?: string;
   dimensions?: {
-    length: string;
-    width: string;
-    height: string;
+    length: number;
+    width: number;
+    height: number;
   };
 }
 

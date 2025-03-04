@@ -144,6 +144,8 @@ export default function SenderDetails() {
 
     try {
       setIsContactPickerOpen(true);
+      setIsLoading(true); // Add loading state while accessing contacts
+
       const { status } = await Contacts.requestPermissionsAsync();
       
       if (status !== 'granted') {
@@ -171,12 +173,17 @@ export default function SenderDetails() {
       
       if (contact?.phoneNumbers?.[0]?.number) {
         const cleanedNumber = contact.phoneNumbers[0].number.replace(/\D/g, '');
+        const formattedPhone = formatPhoneNumber(cleanedNumber);
+        
+        // Update form data immediately in a single state update
         setFormData(prev => ({
           ...prev,
           name: contact.name || prev.name,
-          phone: formatPhoneNumber(cleanedNumber)
+          phone: formattedPhone
         }));
-        setFormErrors(prev => ({ ...prev, phone: undefined, name: undefined }));
+        
+        // Clear any existing errors
+        setFormErrors({});
       }
     } catch (error: any) {
       console.error('Contact picker error:', error);
@@ -187,6 +194,7 @@ export default function SenderDetails() {
       }
     } finally {
       setIsContactPickerOpen(false);
+      setIsLoading(false); // Ensure loading state is cleared
     }
   };
 

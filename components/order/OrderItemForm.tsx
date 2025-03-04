@@ -8,37 +8,64 @@ interface OrderItemFormProps {
 }
 
 export function OrderItemForm({ onSubmit }: OrderItemFormProps) {
-  const [description, setDescription] = useState('');
+  // Add missing state variables
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('');
+  const [subcategory, setSubcategory] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [weight, setWeight] = useState('');
+  const [value, setValue] = useState('');
 
   const handleSubmit = () => {
-    if (!description.trim()) return;
+    if (!name.trim()) return;
 
     onSubmit({
-      description: description.trim(),
+      name: name.trim(),
+      category: category.trim(),
+      subcategory: subcategory.trim(),
       quantity: parseInt(quantity, 10) || 1,
-      weight: parseFloat(weight) || undefined,
+      weight: parseFloat(weight) || 0,
+      value: parseFloat(value) || 0,
+      description: '' // Added missing required description field
     });
 
     // Reset form
-    setDescription('');
+    setName('');
+    setCategory('');
+    setSubcategory('');
     setQuantity('1');
     setWeight('');
+    setValue('');
   };
 
   return (
     <View style={styles.container}>
       <TextInput
         style={styles.input}
-        placeholder="Item description"
-        value={description}
-        onChangeText={setDescription}
+        placeholder="Item name"
+        value={name}
+        onChangeText={setName}
       />
       
       <View style={styles.row}>
         <TextInput
           style={[styles.input, styles.halfInput]}
+          placeholder="Category"
+          value={category}
+          onChangeText={setCategory}
+        />
+        
+        <TextInput
+          style={[styles.input, styles.halfInput]}
+          placeholder="Subcategory"
+          value={subcategory}
+          onChangeText={setSubcategory}
+        />
+      </View>
+      
+      <View style={styles.row}>
+        <TextInput
+          style={[styles.input, styles.thirdInput]}
           placeholder="Quantity"
           value={quantity}
           onChangeText={setQuantity}
@@ -46,10 +73,18 @@ export function OrderItemForm({ onSubmit }: OrderItemFormProps) {
         />
         
         <TextInput
-          style={[styles.input, styles.halfInput]}
+          style={[styles.input, styles.thirdInput]}
           placeholder="Weight (kg)"
           value={weight}
           onChangeText={setWeight}
+          keyboardType="decimal-pad"
+        />
+        
+        <TextInput
+          style={[styles.input, styles.thirdInput]}
+          placeholder="Value"
+          value={value}
+          onChangeText={setValue}
           keyboardType="decimal-pad"
         />
       </View>
@@ -83,6 +118,9 @@ const styles = StyleSheet.create({
   halfInput: {
     flex: 1,
   },
+  thirdInput: {
+    flex: 1,
+  },
   button: {
     backgroundColor: '#007AFF',
     padding: 16,
@@ -93,4 +131,4 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
   },
-}); 
+});

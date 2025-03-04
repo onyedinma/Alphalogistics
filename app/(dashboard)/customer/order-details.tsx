@@ -11,11 +11,16 @@ interface OrderItem {
   category: string;
   subcategory: string;
   quantity: number;
-  weight: string;
-  value: string;
+  weight: number;
+  value: number;
   isFragile?: boolean;
   requiresSpecialHandling?: boolean;
   specialInstructions?: string;
+  dimensions?: {
+    length?: number;
+    width?: number;
+    height?: number;
+  };
 }
 
 interface Order {
@@ -521,4 +526,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
   },
-}); 
+});

@@ -9,7 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React from 'react';
 import FastImage from 'react-native-fast-image';
-import { BlurView } from 'expo-blur';
+
 import { COLORS, SHADOWS } from '@/constants/theme';
 import { MAX_IMAGE_SIZE, MAX_IMAGES_PER_ITEM, ACCEPTED_IMAGE_TYPES, validateImageDimensions } from '@/constants/images';
 
@@ -17,16 +17,24 @@ interface ItemList {
   items: ItemDetails[];
   totalWeight: number;
   totalValue: number;
+  isLoading?: boolean;
+}
+
+interface ItemDetailsScreenState {
+  isSubmitting: boolean;
+  isImageLoading: boolean;
+  showImagePreview: boolean;
+  selectedImageIndex: number;
 }
 
 interface ItemFormData extends ItemDetails {
-  quantity: string;
-  weight: string;
-  value: string;
+  quantity: number;
+  weight: number;
+  value: number;
   dimensions: {
-    length: string;
-    width: string;
-    height: string;
+    length: number;
+    width: number;
+    height: number;
   };
 }
 
@@ -259,8 +267,18 @@ const styles = StyleSheet.create({
     ...SHADOWS.small,
     borderLeftWidth: 4,
     borderLeftColor: COLORS.secondary,
+    marginHorizontal: 4,
   },
   itemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  // Remove floating menu related styles
+  itemHeaderStyle: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 8,
@@ -461,331 +479,287 @@ const styles = StyleSheet.create({
   itemCardMargin: {
     marginTop: 10,
   },
+  inputWrapper: {
+    flex: 1,
+    marginRight: 8,
+    // Add any additional styles you need for the input wrapper
+  },
+  smallLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+  },
+  smallInput: {
+    height: 40, // Adjust height as needed
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 8,
+    fontSize: 14,
+    color: '#333',
+  },
+  detailsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  detailItem: {
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  detailInput: {
+    marginTop: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+  },
+  dimensionsContainer: {
+    gap: 12,
+    marginTop: 8,
+  },
+  dimensionInputWrapper: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  dimensionInput: {
+    textAlign: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    minWidth: 80,
+  },
+  dimensionLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
 });
 
 const CATEGORIES_WITH_SUBCATEGORIES: Record<CategoryType, Array<{ name: string; weightRange: { min: number; max: number; step: number } }>> = {
   'electronics': [
     { name: 'Phones', weightRange: { min: 0.1, max: 2, step: 0.1 } },
-    { name: 'Laptops', weightRange: { min: 0.5, max: 5, step: 0.1 } }
+    { name: 'Laptops', weightRange: { min: 0.5, max: 5, step: 0.1 } },
+    { name: 'Tablets', weightRange: { min: 0.2, max: 3, step: 0.1 } },
+    { name: 'Accessories', weightRange: { min: 0.05, max: 1, step: 0.05 } },
+    { name: 'Cameras', weightRange: { min: 0.2, max: 2, step: 0.1 } },
+    { name: 'Audio', weightRange: { min: 0.1, max: 3, step: 0.1 } }
   ],
   'clothing': [
-    { name: 'Clothes', weightRange: { min: 0.1, max: 10, step: 0.1 } }
+    { name: 'Clothes', weightRange: { min: 0.1, max: 10, step: 0.1 } },
+    { name: 'Shoes', weightRange: { min: 0.2, max: 3, step: 0.1 } },
+    { name: 'Accessories', weightRange: { min: 0.05, max: 1, step: 0.05 } },
+    { name: 'Outerwear', weightRange: { min: 0.5, max: 8, step: 0.2 } }
   ],
   'documents': [
-    { name: 'Papers', weightRange: { min: 0.1, max: 5, step: 0.1 } }
+    { name: 'Papers', weightRange: { min: 0.1, max: 5, step: 0.1 } },
+    { name: 'Invoices', weightRange: { min: 0.05, max: 1, step: 0.05 } },
+    { name: 'Reports', weightRange: { min: 0.1, max: 2, step: 0.1 } },
+    { name: 'Certificates', weightRange: { min: 0.1, max: 3, step: 0.1 } }
   ],
   'food': [
     { name: 'Perishables', weightRange: { min: 0.1, max: 20, step: 0.1 } },
-    { name: 'Non-perishables', weightRange: { min: 0.1, max: 50, step: 0.1 } }
+    { name: 'Non-perishables', weightRange: { min: 0.1, max: 50, step: 0.1 } },
+    { name: 'Beverages', weightRange: { min: 0.2, max: 30, step: 0.2 } },
+    { name: 'Snacks', weightRange: { min: 0.05, max: 5, step: 0.05 } },
+    { name: 'Frozen', weightRange: { min: 0.2, max: 15, step: 0.2 } },
+    { name: 'Bakery', weightRange: { min: 0.1, max: 5, step: 0.1 } }
   ],
   'fragile': [
-    { name: 'Glass', weightRange: { min: 0.1, max: 10, step: 0.1 } }
+    { name: 'Glass', weightRange: { min: 0.1, max: 10, step: 0.1 } },
+    { name: 'Ceramics', weightRange: { min: 0.1, max: 8, step: 0.1 } },
+    { name: 'Artworks', weightRange: { min: 0.2, max: 5, step: 0.1 } }
   ],
   'other': [
-    { name: 'Miscellaneous', weightRange: { min: 0.1, max: 100, step: 0.1 } }
+    { name: 'Miscellaneous', weightRange: { min: 0.1, max: 100, step: 0.1 } },
+    { name: 'Books', weightRange: { min: 0.2, max: 15, step: 0.1 } },
+    { name: 'Tools', weightRange: { min: 0.5, max: 50, step: 0.5 } },
+    { name: 'Toys', weightRange: { min: 0.1, max: 10, step: 0.1 } }
   ]
 };
 
 // Ensure VEHICLES can be indexed with a string
-const VEHICLES: Record<string, { maxWeight: number }> = { bike: { maxWeight: 100 }, car: { maxWeight: 500 } };
+const VEHICLES: Record<string, { maxWeight: number }> = {
+  bike: { maxWeight: 100 },
+  car: { maxWeight: 500 },
+  truck: { maxWeight: 1000 }
+};
 
-export default function ItemDetailsScreen() {
-  // Add error handling at the start of the component
-  useEffect(() => {
-    const checkDraft = async () => {
-      try {
-        const draft = await StorageService.getOrderDraft();
-        if (!draft) {
-          console.log('No draft found, redirecting...');
-          router.replace('/(dashboard)/customer/new-order');
-          return;
-        }
-        // Continue with normal component logic
-      } catch (error) {
-        console.error('Error in ItemDetails:', error);
-        Alert.alert(
-          'Error',
-          'Unable to load order details. Please try again.',
-          [
-            {
-              text: 'Go Back',
-              onPress: () => router.back()
-            }
-          ]
-        );
-      }
-    };
-    
-    checkDraft();
-  }, []);
-
-  const [itemList, setItemList] = useState<ItemList>({
-    items: [],
-    totalWeight: 0,
-    totalValue: 0
-  });
-
+const ItemDetailsScreen = () => {
+  // State hooks for form data, item list and modals
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [itemList, setItemList] = useState<ItemList>({ items: [], totalWeight: 0, totalValue: 0 });
   const [currentItem, setCurrentItem] = useState<ItemFormData>({
     name: '',
     category: 'electronics' as CategoryType,
     subcategory: '',
-    quantity: '',
-    weight: '',
-    value: '',
+    quantity: 0,
+    weight: 0,
+    value: 0,
     isFragile: false,
     requiresSpecialHandling: false,
     specialInstructions: '',
-    dimensions: {
-      length: '',
-      width: '',
-      height: ''
-    }
+    dimensions: { length: 0, width: 0, height: 0 }
   });
-
+  const [itemImages, setItemImages] = useState<string[]>([]);
   const [isEditing, setIsEditing] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingItem, setEditingItem] = useState<ItemDetails | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showSubcategoryModal, setShowSubcategoryModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [itemImages, setItemImages] = useState<string[]>([]);
-  const [editingItem, setEditingItem] = useState<ItemDetails | null>(null);
-  const [sortOrder, setSortOrder] = useState<'name' | 'value' | 'weight'>('name');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [showImagePreview, setShowImagePreview] = useState(false);
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-  const [showFloatingMenu, setShowFloatingMenu] = useState(true);
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const [isImageLoading, setIsImageLoading] = useState(false);
 
-  // Add floating menu animation
-  const floatingMenuAnimation = useRef(new Animated.Value(1)).current;
-
+  // ...existing useEffect and helper function definitions...
   useEffect(() => {
-    const listener = scrollY.addListener(({ value }) => {
-      if (value > 50 && showFloatingMenu) {
-        Animated.spring(floatingMenuAnimation, {
-          toValue: 0,
-          useNativeDriver: true,
-        }).start();
-        setShowFloatingMenu(false);
-      } else if (value <= 50 && !showFloatingMenu) {
-        Animated.spring(floatingMenuAnimation, {
-          toValue: 1,
-          useNativeDriver: true,
-        }).start();
-        setShowFloatingMenu(true);
-      }
-    });
-
-    return () => scrollY.removeListener(listener);
-  }, [showFloatingMenu]);
-
-  // Add image preview handling
-  const handleImagePreview = (index: number) => {
-    setSelectedImageIndex(index);
-    setShowImagePreview(true);
-  };
-
-  // Add sort handling
-  const handleSort = (type: 'name' | 'value' | 'weight') => {
-    setSortOrder(type);
-    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    
-    setItemList(prev => {
-      const sortedItems = [...prev.items].sort((a, b) => {
-        const aValue = type === 'name' ? a[type] : parseFloat(a[type]);
-        const bValue = type === 'name' ? b[type] : parseFloat(b[type]);
-        return sortDirection === 'asc' ? 
-          (aValue > bValue ? 1 : -1) : 
-          (aValue < bValue ? 1 : -1);
-      });
-      return { ...prev, items: sortedItems };
-    });
-  };
-
-  // Function to handle category selection
-  const handleCategorySelect = (category: CategoryType) => {
-    setCurrentItem(prev => ({
-      ...prev,
-      category,
-      subcategory: '', // Reset subcategory when category changes
-    }));
-    setShowCategoryModal(false);
-  };
-
-  // Function to handle subcategory selection
-  const handleSubcategorySelect = (subcategory: string) => {
-    setCurrentItem(prev => ({
-      ...prev,
-      subcategory,
-    }));
-    setShowSubcategoryModal(false);
-  };
-
-  // Function to validate item details
-  const validateItemDetails = async (): Promise<boolean> => {
-    const errors: string[] = [];
-    
-    if (!currentItem.name.trim()) {
-      errors.push('Item name is required');
-    }
-    if (!currentItem.category) {
-      errors.push('Category is required');
-    }
-    if (!currentItem.subcategory) {
-      errors.push('Subcategory is required');
-    }
-    if (!currentItem.quantity || Number(currentItem.quantity) <= 0) {
-      errors.push('Valid quantity is required');
-    }
-    if (!currentItem.weight || Number(currentItem.weight) <= 0) {
-      errors.push('Valid weight is required');
-    }
-    if (!currentItem.value || Number(currentItem.value) <= 0) {
-      errors.push('Valid value is required');
-    }
-
-    // Add dimension validation
-    if (currentItem.dimensions) {
-      const { length, width, height } = currentItem.dimensions;
-      if ((length && !width && !height) || (!length && width && !height) || (!length && !width && height)) {
-        errors.push('All dimensions must be provided if any are specified');
-      }
-      
-      if (length && width && height) {
-        const maxDimension = 500; // 5 meters in cm
-        if (Number(length) > maxDimension || Number(width) > maxDimension || Number(height) > maxDimension) {
-          errors.push('Maximum dimension allowed is 500cm (5m)');
+    const initializeComponent = async () => {
+      try {
+        setIsInitializing(true);
+        // Load saved items from draft
+        const orderDraft = await StorageService.getOrderDraft();
+        if (orderDraft?.items && orderDraft.items.length > 0) {
+          setItemList({
+            items: orderDraft.items,
+            ...calculateTotals(orderDraft.items)
+          });
+        } else {
+          setItemList({
+            items: [],
+            totalWeight: 0,
+            totalValue: 0
+          });
         }
+      } catch (error) {
+        console.error('Error initializing items:', error);
+        setError('Failed to initialize component');
+      } finally {
+        setIsInitializing(false);
       }
-    }
+    };
+    initializeComponent();
+  }, []);
 
-    // Add weight validation based on vehicle capacity
-    const orderDraft = await StorageService.getOrderDraft();
-    if (orderDraft?.delivery?.vehicle) {
-      const maxWeight = VEHICLES[orderDraft.delivery.vehicle].maxWeight;
-      const totalWeight = itemList.items.reduce((sum, item) => 
-        sum + (Number(item.weight) * Number(item.quantity)), 0);
-      const newItemWeight = Number(currentItem.weight) * Number(currentItem.quantity);
-      
-      if (editingItem) {
-        // Subtract existing item weight when editing
-        const existingWeight = Number(editingItem.weight) * Number(editingItem.quantity);
-        if ((totalWeight - existingWeight + newItemWeight) > maxWeight) {
-          errors.push(`Total weight exceeds vehicle capacity of ${maxWeight}kg`);
-        }
-      } else if ((totalWeight + newItemWeight) > maxWeight) {
-        errors.push(`Total weight exceeds vehicle capacity of ${maxWeight}kg`);
-      }
-    }
-
-    if (errors.length > 0) {
-      Alert.alert('Required Fields', errors.join('\n'));
-      return false;
-    }
-    return true;
-  };
-
-  // Function to calculate totals
   const calculateTotals = (items: ItemDetails[]) => {
     return items.reduce((acc, item) => ({
-      totalWeight: acc.totalWeight + (parseFloat(item.weight) * parseInt(item.quantity)),
-      totalValue: acc.totalValue + (parseFloat(item.value) * parseInt(item.quantity))
+      totalWeight: acc.totalWeight + (item.weight * item.quantity),
+      totalValue: acc.totalValue + (item.value * item.quantity)
     }), { totalWeight: 0, totalValue: 0 });
   };
 
-  // Function to add new item
-  const handleAddItem = async () => {
-    if (!await validateItemDetails()) return;
+  const handleInputChange = (field: keyof ItemFormData, value: string) => {
+    setCurrentItem(prev => ({ ...prev, [field]: value }));
+  };
 
-    setIsLoading(true);
+  const handleDimensionChange = (dimension: 'length' | 'width' | 'height', value: string) => {
+    setCurrentItem(prev => ({
+      ...prev,
+      dimensions: { ...prev.dimensions, [dimension]: value }
+    }));
+  };
+
+  const validateForm = () => {
+    const errors: string[] = [];
+    const trimmedName = currentItem.name.trim();
+    
+    // Required field validations
+    if (!trimmedName) errors.push('Item name is required');
+    if (!currentItem.category) errors.push('Category is required');
+    if (!currentItem.subcategory) errors.push('Subcategory is required');
+    
+    // Numeric field validations with proper parsing
+    const quantity = Number(currentItem.quantity);
+    const weight = Number(currentItem.weight);
+    const value = Number(currentItem.value);
+    
+    if (isNaN(quantity) || quantity <= 0) errors.push('Quantity must be a positive number');
+    if (isNaN(weight) || weight <= 0) errors.push('Weight must be a positive number');
+    if (isNaN(value) || value <= 0) errors.push('Value must be a positive number');
+    
+    // Category-specific weight validation
+    const categoryInfo = CATEGORIES_WITH_SUBCATEGORIES[currentItem.category as CategoryType];
+    const subcategoryInfo = categoryInfo?.find(sub => sub.name === currentItem.subcategory);
+    
+    if (subcategoryInfo && weight > 0) {
+      const { min, max } = subcategoryInfo.weightRange;
+      if (weight < min || weight > max) {
+        errors.push(`Weight for ${currentItem.subcategory} must be between ${min}kg and ${max}kg`);
+      }
+    }
+    
+    return errors;
+  };
+
+  const handleAddItem = async () => {
+    const validationErrors = validateForm();
+    if (validationErrors.length > 0) {
+      Alert.alert('Validation Error', validationErrors.join('\n'));
+      return;
+    }
+    
     try {
+      setIsLoading(true);
+      const orderDraft = await StorageService.getOrderDraft();
+      if (!orderDraft) throw new Error('No order draft found');
+
       const newItem: ItemDetails = {
         name: currentItem.name.trim(),
         category: currentItem.category,
         subcategory: currentItem.subcategory,
-        quantity: currentItem.quantity.toString(),
-        weight: currentItem.weight.toString(),
-        value: currentItem.value.toString(),
+        quantity: currentItem.quantity || 0,
+        weight:currentItem.weight || 0,
+        value: currentItem.value || 0,
         isFragile: currentItem.isFragile,
         requiresSpecialHandling: currentItem.requiresSpecialHandling,
         specialInstructions: currentItem.specialInstructions || '',
-        dimensions: currentItem.dimensions ? {
-          length: currentItem.dimensions.length.toString(),
-          width: currentItem.dimensions.width.toString(),
-          height: currentItem.dimensions.height.toString()
-        } : undefined,
+        dimensions: {
+          length: currentItem.dimensions.length,
+          width: currentItem.dimensions.width,
+          height: currentItem.dimensions.height
+        },
         images: itemImages
       };
 
-      const orderDraft = await StorageService.getOrderDraft();
-      if (!orderDraft) {
-        throw new Error('No order draft found');
-      }
-
-      // Fix: Ensure receiver structure is complete
-      const receiver: Receiver = {
-        name: orderDraft.receiver?.name || '',
-        address: orderDraft.receiver?.address || '',
-        phone: orderDraft.receiver?.phone || '',
-        state: orderDraft.receiver?.state || '',
-        deliveryMethod: orderDraft.receiver?.deliveryMethod || 'delivery',
-        pickupCenter: orderDraft.receiver?.pickupCenter || ''
-      };
-
+      const updatedItems = [...(orderDraft.items || []), newItem];
+      const totals = calculateTotals(updatedItems);
       const updatedDraft: OrderDraft = {
+        ...orderDraft,
         delivery: {
-          scheduledPickup: orderDraft.delivery?.scheduledPickup || new Date().toISOString(),
-          vehicle: orderDraft.delivery?.vehicle || 'bike',
-          fee: orderDraft.delivery?.fee || 0
+          scheduledPickup: orderDraft.delivery.scheduledPickup,
+          vehicle: orderDraft.delivery.vehicle,
+          fee: orderDraft.delivery.fee
         },
-        sender: orderDraft.sender || { name: '', address: '', phone: '', state: '' },
-        receiver,
-        locations: orderDraft.locations || {
-          pickup: { address: '', city: '', state: '', postalCode: '', country: 'Nigeria', instructions: '' },
-          delivery: { address: '', city: '', state: '', postalCode: '', country: 'Nigeria', instructions: '' }
-        },
-        items: [...(orderDraft.items || []), newItem],
+        items: updatedItems,
         pricing: {
-          itemValue: calculateTotals([...(orderDraft.items || []), newItem]).totalValue,
-          deliveryFee: orderDraft.delivery?.fee || 0,
-          total: calculateTotals([...(orderDraft.items || []), newItem]).totalValue + (orderDraft.delivery?.fee || 0)
-        },
-        orderDetails: {
-          status: 'draft',
-          createdAt: orderDraft.orderDetails?.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          itemValue: totals.totalValue,
+          deliveryFee: orderDraft.delivery.fee,
+          total: totals.totalValue + orderDraft.delivery.fee
         }
       };
 
-      await StorageService.saveOrderDraft(updatedDraft);
-      
-      // Update local state
-      setItemList({
-        items: updatedDraft.items,
-        ...calculateTotals(updatedDraft.items)
-      });
+      // Enhanced logging for debugging
+      console.log('Order Draft Components:');
+      console.log('Sender:', orderDraft.sender);
+      console.log('Receiver:', orderDraft.receiver);
+      console.log('Delivery:', updatedDraft.delivery);
+      console.log('Items:', updatedDraft.items);
+      console.log('Pricing:', updatedDraft.pricing);
+      console.log('Complete Order Draft:', updatedDraft);
 
+      await StorageService.saveOrderDraft(updatedDraft);
+      setItemList({ items: updatedItems, ...totals });
+      
       // Reset form
       setCurrentItem({
         name: '',
         category: 'electronics' as CategoryType,
         subcategory: '',
-        quantity: '',
-        weight: '',
-        value: '',
+        quantity: 0,
+        weight: 0,
+        value: 0,
         isFragile: false,
         requiresSpecialHandling: false,
         specialInstructions: '',
-        dimensions: {
-          length: '',
-          width: '',
-          height: ''
-        }
+        dimensions: { length: 0, width: 0, height: 0 }
       });
-      setSelectedImage(null);
       setItemImages([]);
-
       Alert.alert('Success', 'Item added successfully');
     } catch (error) {
       console.error('Error adding item:', error);
@@ -795,700 +769,299 @@ export default function ItemDetailsScreen() {
     }
   };
 
-  // Function to handle dimension changes
-  const handleDimensionChange = (dimension: 'length' | 'width' | 'height', value: string) => {
-      setCurrentItem(prev => ({
-        ...prev,
-        dimensions: {
-          ...prev.dimensions,
-        [dimension]: value
-        }
-      }));
-  };
-
-  // Function to handle input changes
-  const handleInputChange = (field: keyof ItemFormData, value: string) => {
-      setCurrentItem(prev => ({
-        ...prev,
-        [field]: value
-      }));
-  };
-
-  // Load saved items when component mounts
-  useEffect(() => {
-    loadSavedItems();
-  }, []);
-
-  // Function to load saved items
-  const loadSavedItems = async () => {
-    try {
-      const orderDraft = await StorageService.getOrderDraft();
-      if (!orderDraft) {
-        console.log('No order draft found');
-        return;
-      }
-
-      // Initialize with empty array if items is undefined
-      const items = orderDraft.items || [];
-      
-      // Only process if we have items
-      if (items.length > 0) {
-        const typedItems = items.map(item => {
-          const dimensions = item.dimensions || { length: '0', width: '0', height: '0' };
-          return {
-            name: item.name || '',
-            category: item.category as CategoryType,
-            subcategory: item.subcategory || '',
-            quantity: item.quantity?.toString() || '0',
-            weight: item.weight?.toString() || '0',
-            value: item.value?.toString() || '0',
-            imageUri: item.imageUri,
-            isFragile: item.isFragile || false,
-            requiresSpecialHandling: item.requiresSpecialHandling || false,
-            specialInstructions: item.specialInstructions || '',
-            dimensions: {
-              length: dimensions.length?.toString() || '0',
-              width: dimensions.width?.toString() || '0',
-              height: dimensions.height?.toString() || '0'
-            }
-          };
-        });
-        
-        const { totalWeight, totalValue } = calculateTotals(typedItems);
-        setItemList({
-          items: typedItems,
-          totalWeight,
-          totalValue
-        });
-      } else {
-        // Set empty state if no items
-        setItemList({
-          items: [],
-          totalWeight: 0,
-          totalValue: 0
-        });
-      }
-    } catch (error) {
-      console.error('Error loading items:', error);
-      Alert.alert('Error', 'Failed to load items');
-      // Set empty state on error
-      setItemList({
-        items: [],
-        totalWeight: 0,
-        totalValue: 0
-      });
-    }
-  };
-
-  // Update the handleContinue function
-  const handleContinue = async () => {
-    if (itemList.items.length === 0) {
-      Alert.alert('Error', 'Please add at least one item before continuing');
-      return;
-    }
-    
-    try {
-      setIsLoading(true);
-      // Get current draft
-      const orderDraft = await StorageService.getOrderDraft();
-      if (!orderDraft) {
-        throw new Error('Order draft not found');
-      }
-
-      // Calculate totals
-      const totalValue = itemList.items.reduce((sum, item) => sum + (Number(item.value) * Number(item.quantity)), 0);
-      const deliveryFee = orderDraft.delivery?.fee || 0;
-
-      // Create updated draft with all required fields
-      const updatedDraft: OrderDraft = {
-        ...orderDraft,
-        items: itemList.items,
-        delivery: {
-          scheduledPickup: orderDraft.delivery?.scheduledPickup || new Date().toISOString(),
-          vehicle: orderDraft.delivery?.vehicle || 'bike',
-          fee: deliveryFee
-        },
-        pricing: {
-          itemValue: totalValue,
-          deliveryFee: deliveryFee,
-          total: totalValue + deliveryFee
-        },
-        orderDetails: {
-          status: 'draft',
-          createdAt: orderDraft.orderDetails?.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
-      };
-
-      await StorageService.saveOrderDraft(updatedDraft);
-      router.push('/(dashboard)/customer/checkout');
-    } catch (error) {
-      console.error('Error preparing for checkout:', error);
-      Alert.alert('Error', 'Failed to prepare for checkout. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Add image picker function with camera support
-  const handleImagePick = async () => {
-    try {
-      if (itemImages.length >= MAX_IMAGES_PER_ITEM) {
-        Alert.alert('Limit Reached', `Maximum ${MAX_IMAGES_PER_ITEM} images allowed per item`);
-        return;
-      }
-
-      Alert.alert(
-        'Add Image',
-        'Choose an option',
-        [
-          {
-            text: 'Take Photo',
-            onPress: async () => {
-              const { status } = await ImagePicker.requestCameraPermissionsAsync();
-              if (status !== 'granted') {
-                Alert.alert('Permission Required', 'Camera access is required to take photos');
-                return;
-              }
-
-              const result = await ImagePicker.launchCameraAsync({
-                mediaTypes: ['images'],
-                allowsEditing: true,
-                quality: 0.8,
-              });
-
-              if (!result.canceled && result.assets[0]) {
-                const image = result.assets[0];
-                const dimensions = await validateImageDimensions(image.uri);
-                
-                if (dimensions.fileSize > MAX_IMAGE_SIZE) {
-                  Alert.alert('File Too Large', 'Please select an image under 5MB');
-                  return;
+  const renderItem = (item: ItemDetails, index: number) => (
+    <View key={index} style={styles.itemCard}>
+      <View style={styles.itemHeader}>
+        <View style={styles.itemHeaderLeft}>
+          <Text style={styles.itemName}>{item.name}</Text>
+          <Text style={styles.itemCategory}>{item.category} - {item.subcategory}</Text>
+        </View>
+        <View style={styles.itemActions}>
+          <TouchableOpacity onPress={() => {/* Implement edit if needed */}}>
+            <Ionicons name="create-outline" size={24} color="#666" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => {
+            Alert.alert('Delete Item','Are you sure you want to delete this item?', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete', style: 'destructive', onPress: () => {
+                  const updatedItems = itemList.items.filter((_, i) => i !== index);
+                  setItemList({ items: updatedItems, ...calculateTotals(updatedItems) });
                 }
-
-                setItemImages(prev => [...prev, image.uri]);
               }
-            }
-          },
-          {
-            text: 'Choose from Gallery',
-            onPress: async () => {
-              const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-              if (status !== 'granted') {
-                Alert.alert('Permission Required', 'Gallery access is required to select photos');
-                return;
-              }
-
-              const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ['images'],
-                allowsEditing: true,
-                quality: 0.8,
-              });
-
-              if (!result.canceled && result.assets[0]) {
-                const image = result.assets[0];
-                const dimensions = await validateImageDimensions(image.uri);
-                
-                if (dimensions.fileSize > MAX_IMAGE_SIZE) {
-                  Alert.alert('File Too Large', 'Please select an image under 5MB');
-                  return;
-                }
-
-                setItemImages(prev => [...prev, image.uri]);
-              }
-            }
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel'
-          }
-        ]
-      );
-    } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image');
-    }
-  };
-
-  // Add image removal function
-  const handleRemoveImage = (index: number) => {
-    setItemImages(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Add edit item function
-  const handleEditItem = (index: number) => {
-    const item = itemList.items[index];
-    setEditingItem(item);
-    setEditingIndex(index);
-    setIsEditing(true);
-    setCurrentItem({
-      name: item.name,
-      category: item.category as CategoryType,
-      subcategory: item.subcategory,
-      quantity: item.quantity.toString(),
-      weight: item.weight.toString(),
-      value: item.value.toString(),
-      isFragile: item.isFragile || false,
-      requiresSpecialHandling: item.requiresSpecialHandling || false,
-      specialInstructions: item.specialInstructions || '',
-      dimensions: item.dimensions || { length: '', width: '', height: '' }
-    });
-    setItemImages(item.images || []);
-  };
-
-  // Add duplicate item function
-  const handleDuplicateItem = (index: number) => {
-    const item = itemList.items[index];
-    const duplicatedItem = {
-      ...item,
-      name: `${item.name} (Copy)`,
-    };
-    
-    const updatedItems = [...itemList.items, duplicatedItem];
-    const { totalWeight, totalValue } = calculateTotals(updatedItems);
-    setItemList({
-      items: updatedItems,
-      totalWeight,
-      totalValue
-    });
-  };
-
-  // Add swipe to delete functionality in the render method
-  const renderItem = (item: ItemDetails, index: number) => {
-    return (
-      <View key={index}>
-        <View style={[styles.itemCard, index > 0 && styles.itemCardMargin]}>
-          <View style={styles.itemHeader}>
-            <View style={styles.itemHeaderLeft}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemCategory}>{item.category} - {item.subcategory}</Text>
-            </View>
-            <View style={styles.itemActions}>
-              <TouchableOpacity 
-                style={styles.itemAction}
-                onPress={() => handleEditItem(index)}
-              >
-                <Ionicons name="create-outline" size={24} color="#666" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.itemAction}
-                onPress={() => handleDuplicateItem(index)}
-              >
-                <Ionicons name="copy-outline" size={24} color="#666" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.itemAction}
-                onPress={() => {
-                  Alert.alert(
-                    'Delete Item',
-                    'Are you sure you want to delete this item?',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      { 
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => {
-                          const updatedItems = itemList.items.filter((_, i) => i !== index);
-                          setItemList(prev => ({
-                            ...prev,
-                            items: updatedItems,
-                            ...calculateTotals(updatedItems)
-                          }));
-                        }
-                      }
-                    ]
-                  );
-                }}
-              >
-                <Ionicons name="trash-outline" size={24} color="#FF4444" />
-              </TouchableOpacity>
-            </View>
-          </View>
-          <View style={styles.itemDetails}>
-            <View style={styles.itemDetail}>
-              <Text style={styles.itemDetailLabel}>Quantity</Text>
-              <Text style={styles.itemDetailValue}>{item.quantity}</Text>
-            </View>
-            <View style={styles.itemDetail}>
-              <Text style={styles.itemDetailLabel}>Weight</Text>
-              <Text style={styles.itemDetailValue}>{item.weight} kg</Text>
-            </View>
-            <View style={styles.itemDetail}>
-              <Text style={styles.itemDetailLabel}>Value</Text>
-              <Text style={styles.itemDetailValue}>₦{item.value}</Text>
-            </View>
-          </View>
+            ]);
+          }}>
+            <Ionicons name="trash-outline" size={24} color="#FF4444" />
+          </TouchableOpacity>
         </View>
       </View>
-    );
-  };
-
-  // Add floating menu component
-  const FloatingMenu = () => (
-    <View style={styles.floatingMenu}>
-      <TouchableOpacity
-        style={[
-          styles.floatingMenuButton,
-          sortOrder === 'name' && styles.floatingMenuButtonActive
-        ]}
-        onPress={() => handleSort('name')}
-      >
-        <Ionicons
-          name="text"
-          size={24}
-          color={sortOrder === 'name' ? '#fff' : '#666'}
-        />
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[
-          styles.floatingMenuButton,
-          sortOrder === 'value' && styles.floatingMenuButtonActive
-        ]}
-        onPress={() => handleSort('value')}
-      >
-        <Ionicons
-          name="cash"
-          size={24}
-          color={sortOrder === 'value' ? '#fff' : '#666'}
-        />
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[
-          styles.floatingMenuButton,
-          sortOrder === 'weight' && styles.floatingMenuButtonActive
-        ]}
-        onPress={() => handleSort('weight')}
-      >
-        <Ionicons
-          name="scale"
-          size={24}
-          color={sortOrder === 'weight' ? '#fff' : '#666'}
-        />
-      </TouchableOpacity>
+      {/* ...other item details... */}
+      <View style={styles.itemDetails}>
+        <View style={styles.itemDetail}>
+          <Text style={styles.itemDetailLabel}>Quantity</Text>
+          <Text style={styles.itemDetailValue}>{item.quantity}</Text>
+        </View>
+        <View style={styles.itemDetail}>
+          <Text style={styles.itemDetailLabel}>Weight</Text>
+          <Text style={styles.itemDetailValue}>{item.weight} kg</Text>
+        </View>
+        <View style={styles.itemDetail}>
+          <Text style={styles.itemDetailLabel}>Value</Text>
+          <Text style={styles.itemDetailValue}>₦{item.value}</Text>
+        </View>
+      </View>
     </View>
   );
 
-  // Add image preview modal
-  const ImagePreviewModal = () => (
-    <Modal
-      visible={showImagePreview}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setShowImagePreview(false)}
-    >
-      <BlurView intensity={100} style={styles.imagePreviewModal}>
-        <View style={styles.imagePreviewContent}>
-          <FastImage
-            source={{ uri: itemImages[selectedImageIndex] }}
-            style={styles.previewImage}
-            resizeMode={FastImage.resizeMode.contain}
-          />
-          <View style={styles.imageActions}>
-            <TouchableOpacity
-              style={styles.imageActionButton}
-              onPress={() => setSelectedImageIndex(prev => 
-                prev > 0 ? prev - 1 : itemImages.length - 1
-              )}
-            >
-              <Ionicons name="chevron-back" size={24} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.imageActionButton}
-              onPress={() => setShowImagePreview(false)}
-            >
-              <Ionicons name="close" size={24} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.imageActionButton}
-              onPress={() => setSelectedImageIndex(prev =>
-                prev < itemImages.length - 1 ? prev + 1 : 0
-              )}
-            >
-              <Ionicons name="chevron-forward" size={24} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </BlurView>
-    </Modal>
-  );
+  if (isInitializing) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text>Loading items...</Text>
+      </View>
+    );
+  }
+  if (error) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text>Error: {error}</Text>
+      </View>
+    );
+  }
 
-  // Update the main ScrollView to use Animated.ScrollView
   return (
     <View style={styles.container}>
       <Stack.Screen
         options={{
           title: 'Item Details',
           headerShadowVisible: false,
-          headerStyle: {
-            backgroundColor: COLORS.background,
-          },
-          headerLargeTitle: true,
+          headerStyle: { backgroundColor: COLORS.background },
         }}
       />
-
-      <ScrollView
-        style={[styles.mainContainer, { backgroundColor: COLORS.background }]}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView style={styles.mainContainer} contentContainerStyle={styles.contentContainer}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Add New Item</Text>
-          <Text style={styles.headerSubtitle}>
-            Enter the details of the item you want to ship
-          </Text>
+          <Text style={styles.headerSubtitle}>Enter the details of the item you want to ship</Text>
         </View>
 
         <View style={styles.infoBox}>
           <Ionicons name="information-circle-outline" size={20} color="#666" />
-          <Text style={styles.infoText}>
-            Add details about the item you want to ship.
-          </Text>
+          <Text style={styles.infoText}>Add details about the item you want to ship.</Text>
         </View>
 
-        <View style={styles.card}>
-          {/* Category Selection */}
+        {/* Category Selection */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Category</Text>
+          <TouchableOpacity style={styles.categoryInput} onPress={() => setShowCategoryModal(true)}>
+            <Text style={currentItem.category ? styles.inputText : styles.placeholder}>
+              {currentItem.category || 'Select Category'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Subcategory Selection */}
+        {currentItem.category && (
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Category</Text>
-            <TouchableOpacity
-              style={styles.categoryInput}
-              onPress={() => setShowCategoryModal(true)}
-            >
-              <Text style={currentItem.category ? styles.inputText : styles.placeholder}>
-                {currentItem.category || 'Select Category'}
+            <Text style={styles.label}>Subcategory</Text>
+            <TouchableOpacity style={styles.categoryInput} onPress={() => setShowSubcategoryModal(true)}>
+              <Text style={currentItem.subcategory ? styles.inputText : styles.placeholder}>
+                {currentItem.subcategory || 'Select Subcategory'}
               </Text>
             </TouchableOpacity>
           </View>
+        )}
 
-          {/* Subcategory Selection */}
-          {currentItem.category && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Subcategory</Text>
-              <TouchableOpacity
-                style={styles.categoryInput}
-                onPress={() => setShowSubcategoryModal(true)}
-              >
-                <Text style={currentItem.subcategory ? styles.inputText : styles.placeholder}>
-                  {currentItem.subcategory || 'Select Subcategory'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Item Name */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Item Name</Text>
-            <TextInput
-              style={styles.input}
-              value={currentItem.name}
-              onChangeText={(value) => handleInputChange('name', value)}
-              placeholder="Enter item name"
-              placeholderTextColor="#999"
-            />
-          </View>
-
-          {/* Quantity */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Quantity</Text>
-            <TextInput
-              style={styles.input}
-              value={currentItem.quantity}
-              onChangeText={(value) => handleInputChange('quantity', value)}
-              keyboardType="numeric"
-              placeholder="Enter quantity"
-              placeholderTextColor="#999"
-            />
-          </View>
-
-          {/* Weight */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Weight (kg)</Text>
-            <TextInput
-              style={styles.input}
-              value={currentItem.weight}
-              onChangeText={(value) => handleInputChange('weight', value)}
-              keyboardType="numeric"
-              placeholder="Enter weight in kg"
-              placeholderTextColor="#999"
-            />
-          </View>
-
-          {/* Value */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Value (₦)</Text>
-            <View style={styles.valueInput}>
-              <Text style={styles.currencyText}>₦</Text>
-              <TextInput
-                style={[styles.input, { flex: 1, borderBottomWidth: 0, paddingLeft: 4 }]}
-                value={currentItem.value}
-                onChangeText={(value) => handleInputChange('value', value)}
-                keyboardType="numeric"
-                placeholder="Enter item value"
-                placeholderTextColor="#999"
-              />
-            </View>
-          </View>
-
-          {/* Dimensions */}
-          <View style={styles.inputGroup}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.label}>Dimensions (cm)</Text>
-              <TouchableOpacity style={styles.infoButton}>
-                <Ionicons name="information-circle-outline" size={20} color="#666" />
-                <Text style={styles.infoButtonText}>Optional</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={[styles.row, { gap: 16 }]}>
-              <View style={{ flex: 1 }}>
-                <TextInput
-                  style={styles.input}
-                  value={currentItem.dimensions.length.toString()}
-                  onChangeText={(value) => handleDimensionChange('length', value)}
-                  keyboardType="numeric"
-                  placeholder="Length"
-                  placeholderTextColor="#999"
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <TextInput
-                  style={styles.input}
-                  value={currentItem.dimensions.width.toString()}
-                  onChangeText={(value) => handleDimensionChange('width', value)}
-                  keyboardType="numeric"
-                  placeholder="Width"
-                  placeholderTextColor="#999"
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <TextInput
-                  style={styles.input}
-                  value={currentItem.dimensions.height.toString()}
-                  onChangeText={(value) => handleDimensionChange('height', value)}
-                  keyboardType="numeric"
-                  placeholder="Height"
-                  placeholderTextColor="#999"
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* Add Image Section */}
-          <View style={styles.inputGroup}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.label}>Item Images</Text>
-              <TouchableOpacity style={styles.infoButton}>
-                <Ionicons name="information-circle-outline" size={20} color="#666" />
-                <Text style={styles.infoButtonText}>Max {MAX_IMAGES_PER_ITEM} images, 5MB each</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.imageContainer}>
-              {itemImages.map((uri, index) => (
-                <View key={index} style={styles.imageWrapper}>
-                  <Image source={{ uri }} style={styles.imagePreview} />
-                  <TouchableOpacity 
-                    style={styles.removeImageButton}
-                    onPress={() => handleRemoveImage(index)}
-                  >
-                    <Ionicons name="close-circle" size={24} color="#FF4444" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-              {itemImages.length < MAX_IMAGES_PER_ITEM && (
-                <TouchableOpacity 
-                  style={styles.addImageButton}
-                  onPress={handleImagePick}
-                >
-                  <Ionicons name="camera-outline" size={32} color="#666" />
-                  <Text style={styles.addImageText}>Add Image</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          {/* Special Handling */}
-          <View style={styles.inputGroup}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.label}>Special Handling</Text>
-              <TouchableOpacity style={styles.infoButton}>
-                <Ionicons name="information-circle-outline" size={20} color="#666" />
-                <Text style={styles.infoButtonText}>Optional</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.specialHandlingContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.specialHandlingButton,
-                  currentItem.isFragile && styles.specialHandlingButtonSelected,
-                ]}
-                onPress={() => setCurrentItem(prev => ({ ...prev, isFragile: !prev.isFragile }))}
-              >
-                <Ionicons
-                  name={currentItem.isFragile ? "alert-circle" : "alert-circle-outline"}
-                  size={20}
-                  color={currentItem.isFragile ? "#fff" : "#333"}
-                />
-                <Text
-                  style={[
-                    styles.specialHandlingText,
-                    currentItem.isFragile && styles.specialHandlingTextSelected,
-                  ]}
-                >
-                  Fragile
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.specialHandlingButton,
-                  currentItem.requiresSpecialHandling && styles.specialHandlingButtonSelected,
-                ]}
-                onPress={() => setCurrentItem(prev => ({ ...prev, requiresSpecialHandling: !prev.requiresSpecialHandling }))}
-              >
-                <Ionicons
-                  name={currentItem.requiresSpecialHandling ? "hand-left" : "hand-left-outline"}
-                  size={20}
-                  color={currentItem.requiresSpecialHandling ? "#fff" : "#333"}
-                />
-                <Text
-                  style={[
-                    styles.specialHandlingText,
-                    currentItem.requiresSpecialHandling && styles.specialHandlingTextSelected,
-                  ]}
-                >
-                  Special Handling Required
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Special Instructions */}
-          {(currentItem.isFragile || currentItem.requiresSpecialHandling) && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Special Instructions</Text>
-              <TextInput
-                style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-                value={currentItem.specialInstructions}
-                onChangeText={(value) => handleInputChange('specialInstructions', value)}
-                placeholder="Enter special handling instructions"
-                placeholderTextColor="#999"
-                multiline
-                numberOfLines={4}
-              />
-            </View>
-          )}
+        {/* Item Name */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Item Name</Text>
+          <TextInput
+            style={styles.input}
+            value={currentItem.name}
+            onChangeText={value => handleInputChange('name', value)}
+            placeholder="Enter item name"
+            placeholderTextColor="#999"
+          />
         </View>
 
-        {/* Add Item Button */}
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={handleAddItem}
-          disabled={isLoading}
-        >
-          <Text style={styles.addButtonText}>
-            {isLoading ? 'Adding...' : isEditing ? 'Update Item' : 'Add Item'}
-          </Text>
+        {/* Improved Item Details input group */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Item Details</Text>
+          <View style={styles.detailsContainer}>
+            <View style={styles.detailItem}>
+              <Text style={styles.smallLabel}>Quantity</Text>
+              <TextInput
+                style={[styles.input, styles.detailInput]}
+                value={String(currentItem.quantity)}
+                onChangeText={value => handleInputChange('quantity', value)}
+                keyboardType="numeric"
+                placeholder="Qty"
+                placeholderTextColor="#999"
+              />
+            </View>
+            <View style={styles.detailItem}>
+              <Text style={styles.smallLabel}>Weight (kg)</Text>
+              <TextInput
+                style={[styles.input, styles.detailInput]}
+                value={String(currentItem.weight)}
+                onChangeText={value => handleInputChange('weight', value)}
+                keyboardType="numeric"
+                placeholder="Weight"
+                placeholderTextColor="#999"
+              />
+            </View>
+            <View style={styles.detailItem}>
+              <Text style={styles.smallLabel}>Value (₦)</Text>
+              <TextInput
+                style={[styles.input, styles.detailInput]}
+                value={String(currentItem.value)}
+                onChangeText={value => handleInputChange('value', value)}
+                keyboardType="numeric"
+                placeholder="Value"
+                placeholderTextColor="#999"
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Dimensions */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Dimensions (cm) <Text style={{ fontSize: 12, color: '#999' }}>(optional)</Text></Text>
+          <View style={[styles.row, styles.dimensionsContainer]}>
+            <View style={styles.dimensionInputWrapper}>
+              <Text style={styles.smallLabel}>Length</Text>
+              <TextInput
+                style={[styles.input, styles.dimensionInput]}
+                value={String(currentItem.dimensions.length)}
+                onChangeText={value => {
+                  const numericValue = value.replace(/[^0-9.]/g, '');
+                  handleDimensionChange('length', numericValue);
+                }}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor="#999"
+              />
+            </View>
+            <View style={styles.dimensionInputWrapper}>
+              <Text style={styles.smallLabel}>Width</Text>
+              <TextInput
+                style={[styles.input, styles.dimensionInput]}
+                value={String(currentItem.dimensions.width)}
+                onChangeText={value => {
+                  const numericValue = value.replace(/[^0-9.]/g, '');
+                  handleDimensionChange('width', numericValue);
+                }}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor="#999"
+              />
+            </View>
+            <View style={styles.dimensionInputWrapper}>
+              <Text style={styles.smallLabel}>Height</Text>
+              <TextInput
+                style={[styles.input, styles.dimensionInput]}
+                value={String(currentItem.dimensions.height)}
+                onChangeText={value => {
+                  const numericValue = value.replace(/[^0-9.]/g, '');
+                  handleDimensionChange('height', numericValue);
+                }}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor="#999"
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Special Handling */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Special Handling</Text>
+          <View style={styles.row}>
+            <TouchableOpacity
+              style={[styles.specialHandlingButton, currentItem.isFragile && styles.specialHandlingButtonSelected]}
+              onPress={() => setCurrentItem(prev => ({ ...prev, isFragile: !prev.isFragile }))}
+            >
+              <Ionicons name={currentItem.isFragile ? "alert-circle" : "alert-circle-outline"} size={20} color={currentItem.isFragile ? "#fff" : "#333"} />
+              <Text style={[styles.specialHandlingText, currentItem.isFragile && styles.specialHandlingTextSelected]}>Fragile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.specialHandlingButton, currentItem.requiresSpecialHandling && styles.specialHandlingButtonSelected]}
+              onPress={() => setCurrentItem(prev => ({ ...prev, requiresSpecialHandling: !prev.requiresSpecialHandling }))}
+            >
+              <Ionicons name={currentItem.requiresSpecialHandling ? "hand-left" : "hand-left-outline"} size={20} color={currentItem.requiresSpecialHandling ? "#fff" : "#333"} />
+              <Text style={[styles.specialHandlingText, currentItem.requiresSpecialHandling && styles.specialHandlingTextSelected]}>
+                Special Handling Required
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Special Instructions */}
+        {(currentItem.isFragile || currentItem.requiresSpecialHandling) && (
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Special Instructions</Text>
+            <TextInput
+              style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
+              value={currentItem.specialInstructions}
+              onChangeText={value => handleInputChange('specialInstructions', value)}
+              placeholder="Enter special handling instructions"
+              placeholderTextColor="#999"
+              multiline
+            />
+          </View>
+        )}
+
+        {/* Add Image Section */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Item Images</Text>
+          <View style={styles.imageContainer}>
+            {itemImages.map((uri, index) => (
+              <View key={index} style={styles.imageWrapper}>
+                <Image source={{ uri }} style={styles.imagePreview} />
+                <TouchableOpacity style={styles.removeImageButton} onPress={() => setItemImages(prev => prev.filter((_, i) => i !== index))}>
+                  <Ionicons name="close-circle" size={24} color="#FF4444" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {itemImages.length < MAX_IMAGES_PER_ITEM && (
+              <TouchableOpacity 
+                style={[styles.addImageButton, isImageLoading && { opacity: 0.5 }]} 
+                disabled={isImageLoading}
+                onPress={async () => {
+                  setIsImageLoading(true);
+                  try {
+                    const result = await ImagePicker.launchImageLibraryAsync({
+                      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                      allowsEditing: true,
+                      quality: 0.8,
+                      allowsMultipleSelection: false
+                    });
+                    if (!result.canceled && result.assets[0]) {
+                      const image = result.assets[0];
+                      const dimensions = await validateImageDimensions(image.uri);
+                      if (dimensions.fileSize > MAX_IMAGE_SIZE) {
+                        Alert.alert('File Too Large', 'Please select an image under 5MB');
+                        return;
+                      }
+                      setItemImages(prev => [...prev, image.uri]);
+                    }
+                  } catch (error) {
+                    console.error('Error picking image:', error);
+                    Alert.alert('Error', 'Failed to pick image. Please try again.');
+                  } finally {
+                    setIsImageLoading(false);
+                  }
+              }}>
+                <Ionicons name="camera-outline" size={32} color="#666" />
+                <Text style={styles.addImageText}>Add Image</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Add/Update Item Button */}
+        <TouchableOpacity style={styles.addButton} onPress={handleAddItem} disabled={isLoading}>
+          <Text style={styles.addButtonText}>{isLoading ? 'Adding...' : isEditing ? 'Update Item' : 'Add Item'}</Text>
         </TouchableOpacity>
 
-        {/* Item List */}
+        {/* Items List */}
         {itemList.items.length > 0 && (
           <View style={styles.itemList}>
             {itemList.items.map((item, index) => renderItem(item, index))}
@@ -1497,102 +1070,67 @@ export default function ItemDetailsScreen() {
 
         {/* Totals Section */}
         {itemList.items.length > 0 && (
-          <>
-            <View style={styles.totalSection}>
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total Weight</Text>
-                <Text style={styles.totalValue}>{itemList.totalWeight.toFixed(2)} kg</Text>
-              </View>
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total Value</Text>
-                <Text style={styles.totalValue}>₦{itemList.totalValue.toFixed(2)}</Text>
-              </View>
+          <View style={styles.totalSection}>
+            <View style={styles.totalRow}>
+              <Text style={styles.label}>Total Weight</Text>
+              <Text style={styles.totalValue}>{itemList.totalWeight.toFixed(2)} kg</Text>
             </View>
-
-            <TouchableOpacity
-              style={[styles.continueButton, isLoading && styles.disabledButton]}
-              onPress={handleContinue}
-              disabled={isLoading}
-            >
-              <Text style={styles.continueButtonText}>
-                {isLoading ? 'Processing...' : 'Continue to Checkout'}
-              </Text>
-            </TouchableOpacity>
-          </>
+            <View style={styles.totalRow}>
+              <Text style={styles.label}>Total Value</Text>
+              <Text style={styles.totalValue}>₦{itemList.totalValue.toFixed(2)}</Text>
+            </View>
+          </View>
         )}
       </ScrollView>
-
-      <FloatingMenu />
-      <ImagePreviewModal />
-
-      {/* Category Selection Modal */}
-      <Modal
-        visible={showCategoryModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowCategoryModal(false)}
-      >
-        <BlurView intensity={100} style={styles.modalContainer}>
-          <View style={[styles.modalContent, SHADOWS.large]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Category</Text>
-              <TouchableOpacity 
-                style={styles.modalCloseButton}
-                onPress={() => setShowCategoryModal(false)}
+      {/* Category and Subcategory modals */}
+      <Modal visible={showCategoryModal} transparent animationType="fade" onRequestClose={() => setShowCategoryModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ backgroundColor: '#fff', padding: 20, borderRadius: 12, width: '80%' }}>
+            <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 16 }}>Select Category</Text>
+            {Object.keys(CATEGORIES_WITH_SUBCATEGORIES).map(cat => (
+              <TouchableOpacity
+                key={cat}
+                onPress={() => {
+                  setCurrentItem(prev => ({ ...prev, category: cat as CategoryType, subcategory: '' }));
+                  setShowCategoryModal(false);
+                }}
+                style={{ paddingVertical: 8 }}
               >
-                <Ionicons name="close" size={24} color="#1A1A1A" />
+                <Text style={{ fontSize: 16 }}>{cat}</Text>
               </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalList}>
-              {Object.keys(CATEGORIES_WITH_SUBCATEGORIES).map((category) => (
-                <TouchableOpacity
-                  key={category}
-                  style={styles.modalItem}
-                  onPress={() => handleCategorySelect(category as CategoryType)}
-                >
-                  <Text style={styles.modalItemText}>{category}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            ))}
+            <TouchableOpacity onPress={() => setShowCategoryModal(false)} style={{ marginTop: 16, alignSelf: 'flex-end' }}>
+              <Text style={{ color: COLORS.primary }}>Close</Text>
+            </TouchableOpacity>
           </View>
-        </BlurView>
+        </View>
       </Modal>
-
-      {/* Subcategory Selection Modal */}
-      <Modal
-        visible={showSubcategoryModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowSubcategoryModal(false)}
-      >
-        <BlurView intensity={100} style={styles.modalContainer}>
-          <View style={[styles.modalContent, SHADOWS.large]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Subcategory</Text>
-              <TouchableOpacity 
-                style={styles.modalCloseButton}
-                onPress={() => setShowSubcategoryModal(false)}
+      <Modal visible={showSubcategoryModal} transparent animationType="fade" onRequestClose={() => setShowSubcategoryModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ backgroundColor: '#fff', padding: 20, borderRadius: 12, width: '80%' }}>
+            <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 16 }}>Select Subcategory</Text>
+            {(
+              CATEGORIES_WITH_SUBCATEGORIES[currentItem.category as CategoryType] || []
+            ).map(sub => (
+              <TouchableOpacity
+                key={sub.name}
+                onPress={() => {
+                  setCurrentItem(prev => ({ ...prev, subcategory: sub.name }));
+                  setShowSubcategoryModal(false);
+                }}
+                style={{ paddingVertical: 8 }}
               >
-                <Ionicons name="close" size={24} color="#1A1A1A" />
+                <Text style={{ fontSize: 16 }}>{sub.name}</Text>
               </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalList}>
-              {currentItem.category && CATEGORIES_WITH_SUBCATEGORIES[currentItem.category as CategoryType].map((subcat) => (
-                <TouchableOpacity
-                  key={subcat.name}
-                  style={styles.modalItem}
-                  onPress={() => handleSubcategorySelect(subcat.name)}
-                >
-                  <Text style={styles.modalItemText}>{subcat.name}</Text>
-                  <Text style={styles.modalItemSubtext}>
-                    Weight range: {subcat.weightRange.min} - {subcat.weightRange.max} kg
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            ))}
+            <TouchableOpacity onPress={() => setShowSubcategoryModal(false)} style={{ marginTop: 16, alignSelf: 'flex-end' }}>
+              <Text style={{ color: COLORS.primary }}>Close</Text>
+            </TouchableOpacity>
           </View>
-        </BlurView>
+        </View>
       </Modal>
     </View>
   );
-}
+};
+
+export default ItemDetailsScreen;
