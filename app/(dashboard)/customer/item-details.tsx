@@ -539,6 +539,11 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
+  proceedButton: {
+    marginTop: 24,
+    marginBottom: 40,
+    backgroundColor: COLORS.primary,
+  },
 });
 
 const CATEGORIES_WITH_SUBCATEGORIES: Record<CategoryType, Array<{ name: string; weightRange: { min: number; max: number; step: number } }>> = {
@@ -852,6 +857,35 @@ const ItemDetailsScreen = () => {
       Alert.alert('Error', 'Failed to update item. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleProceed = async () => {
+    if (itemList.items.length === 0) {
+      Alert.alert('No Items', 'Please add at least one item before proceeding.');
+      return;
+    }
+
+    try {
+      const orderDraft = await StorageService.getOrderDraft();
+      if (!orderDraft) throw new Error('No order draft found');
+
+      // Update order draft with final items and totals
+      const updatedDraft: OrderDraft = {
+        ...orderDraft,
+        items: itemList.items,
+        pricing: {
+          itemValue: itemList.totalValue,
+          deliveryFee: orderDraft.delivery?.fee || 0,
+          total: itemList.totalValue + (orderDraft.delivery?.fee || 0)
+        }
+      };
+
+      await StorageService.saveOrderDraft(updatedDraft);
+      router.push('/customer/delivery-details');
+    } catch (error) {
+      console.error('Error proceeding:', error);
+      Alert.alert('Error', 'Failed to proceed. Please try again.');
     }
   };
 
@@ -1173,54 +1207,80 @@ const ItemDetailsScreen = () => {
             </View>
           </View>
         )}
+
+        {/* Add this after the totals section */}
+        {itemList.items.length > 0 && (
+          <TouchableOpacity
+            style={[styles.continueButton, styles.proceedButton]}
+            onPress={handleProceed}
+          >
+            <Text style={styles.continueButtonText}>
+              Proceed to Delivery Details
+            </Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
-      {/* Category and Subcategory modals */}
-      <Modal visible={showCategoryModal} transparent animationType="fade" onRequestClose={() => setShowCategoryModal(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ backgroundColor: '#fff', padding: 20, borderRadius: 12, width: '80%' }}>
-            <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 16 }}>Select Category</Text>
-            {Object.keys(CATEGORIES_WITH_SUBCATEGORIES).map(cat => (
-              <TouchableOpacity
-                key={cat}
-                onPress={() => {
-                  setCurrentItem(prev => ({ ...prev, category: cat as CategoryType, subcategory: '' }));
-                  setShowCategoryModal(false);
-                }}
-                style={{ paddingVertical: 8 }}
-              >
-                <Text style={{ fontSize: 16 }}>{cat}</Text>
+
+      {/* Modals */}
+      <>
+        <Modal 
+          visible={showCategoryModal} 
+          transparent 
+          animationType="fade" 
+          onRequestClose={() => setShowCategoryModal(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ backgroundColor: '#fff', padding: 20, borderRadius: 12, width: '80%' }}>
+              <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 16 }}>Select Category</Text>
+              {Object.keys(CATEGORIES_WITH_SUBCATEGORIES).map(cat => (
+                <TouchableOpacity
+                  key={cat}
+                  onPress={() => {
+                    setCurrentItem(prev => ({ ...prev, category: cat as CategoryType, subcategory: '' }));
+                    setShowCategoryModal(false);
+                  }}
+                  style={{ paddingVertical: 8 }}
+                >
+                  <Text style={{ fontSize: 16 }}>{cat}</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity onPress={() => setShowCategoryModal(false)} style={{ marginTop: 16, alignSelf: 'flex-end' }}>
+                <Text style={{ color: COLORS.primary }}>Close</Text>
               </TouchableOpacity>
-            ))}
-            <TouchableOpacity onPress={() => setShowCategoryModal(false)} style={{ marginTop: 16, alignSelf: 'flex-end' }}>
-              <Text style={{ color: COLORS.primary }}>Close</Text>
-            </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
-      <Modal visible={showSubcategoryModal} transparent animationType="fade" onRequestClose={() => setShowSubcategoryModal(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ backgroundColor: '#fff', padding: 20, borderRadius: 12, width: '80%' }}>
-            <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 16 }}>Select Subcategory</Text>
-            {(
-              CATEGORIES_WITH_SUBCATEGORIES[currentItem.category as CategoryType] || []
-            ).map(sub => (
-              <TouchableOpacity
-                key={sub.name}
-                onPress={() => {
-                  setCurrentItem(prev => ({ ...prev, subcategory: sub.name }));
-                  setShowSubcategoryModal(false);
-                }}
-                style={{ paddingVertical: 8 }}
-              >
-                <Text style={{ fontSize: 16 }}>{sub.name}</Text>
+        </Modal>
+
+        <Modal 
+          visible={showSubcategoryModal} 
+          transparent 
+          animationType="fade" 
+          onRequestClose={() => setShowSubcategoryModal(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ backgroundColor: '#fff', padding: 20, borderRadius: 12, width: '80%' }}>
+              <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 16 }}>Select Subcategory</Text>
+              {(
+                CATEGORIES_WITH_SUBCATEGORIES[currentItem.category as CategoryType] || []
+              ).map(sub => (
+                <TouchableOpacity
+                  key={sub.name}
+                  onPress={() => {
+                    setCurrentItem(prev => ({ ...prev, subcategory: sub.name }));
+                    setShowSubcategoryModal(false);
+                  }}
+                  style={{ paddingVertical: 8 }}
+                >
+                  <Text style={{ fontSize: 16 }}>{sub.name}</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity onPress={() => setShowSubcategoryModal(false)} style={{ marginTop: 16, alignSelf: 'flex-end' }}>
+                <Text style={{ color: COLORS.primary }}>Close</Text>
               </TouchableOpacity>
-            ))}
-            <TouchableOpacity onPress={() => setShowSubcategoryModal(false)} style={{ marginTop: 16, alignSelf: 'flex-end' }}>
-              <Text style={{ color: COLORS.primary }}>Close</Text>
-            </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      </>
     </View>
   );
 };
