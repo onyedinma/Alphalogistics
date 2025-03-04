@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/ThemedText';
-import { OrderItem } from '@/types';
+import { OrderItem, CategoryType } from '@/types';
 
 interface OrderItemFormProps {
   onSubmit: (item: Omit<OrderItem, 'id'>) => void;
@@ -9,94 +9,77 @@ interface OrderItemFormProps {
 
 export function OrderItemForm({ onSubmit }: OrderItemFormProps) {
   const [name, setName] = useState('');
-  const [category, setCategory] = useState('');
+  const [category, setCategory] = useState<CategoryType>('electronics');
   const [subcategory, setSubcategory] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [weight, setWeight] = useState('');
   const [value, setValue] = useState('');
-  const [length, setLength] = useState('');
-  const [width, setWidth] = useState('');
-  const [height, setHeight] = useState('');
   const [isFragile, setIsFragile] = useState(false);
   const [requiresSpecialHandling, setRequiresSpecialHandling] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState('');
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [dimensions, setDimensions] = useState({
+    length: 0,
+    width: 0,
+    height: 0
+  });
 
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {};
-
-    if (!name.trim()) {
-      newErrors.name = 'Name is required';
+  // Add a type-safe handler for category changes
+  const handleCategoryChange = (text: string) => {
+    // Validate that the text is a valid CategoryType
+    if (text === 'electronics' || 
+        text === 'clothing' || 
+        text === 'documents' || 
+        text === 'food' || 
+        text === 'fragile' || 
+        text === 'other') {
+      setCategory(text);
     }
-
-    if (parseInt(quantity, 10) <= 0) {
-      newErrors.quantity = 'Quantity must be greater than 0';
-    }
-
-    if (parseFloat(weight) < 0) {
-      newErrors.weight = 'Weight must be non-negative';
-    }
-
-    if (parseFloat(value) < 0) {
-      newErrors.value = 'Value must be non-negative';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = () => {
-    if (!validateForm()) return;
+    if (!name.trim()) return;
 
     onSubmit({
       name: name.trim(),
-      category: category.trim(),
-      subcategory: subcategory.trim(),
+      category,
+      subcategory,
       quantity: parseInt(quantity, 10) || 1,
       weight: parseFloat(weight) || 0,
       value: parseFloat(value) || 0,
       isFragile,
       requiresSpecialHandling,
-      specialInstructions: specialInstructions.trim(),
-      dimensions: {
-        length: parseFloat(length) || 0,
-        width: parseFloat(width) || 0,
-        height: parseFloat(height) || 0
-      }
+      specialInstructions,
+      dimensions
     });
 
     // Reset form
     setName('');
-    setCategory('');
+    setCategory('electronics');
     setSubcategory('');
     setQuantity('1');
     setWeight('');
     setValue('');
-    setLength('');
-    setWidth('');
-    setHeight('');
     setIsFragile(false);
     setRequiresSpecialHandling(false);
     setSpecialInstructions('');
-    setErrors({});
+    setDimensions({ length: 0, width: 0, height: 0 });
   };
 
   return (
     <View style={styles.container}>
       <TextInput
-        style={[styles.input, errors.name && styles.inputError]}
-        placeholder="Item name *"
+        style={styles.input}
+        placeholder="Item name"
         value={name}
         onChangeText={setName}
       />
-      {errors.name && <ThemedText style={styles.errorText}>{errors.name}</ThemedText>}
       
       <View style={styles.row}>
         <TextInput
           style={[styles.input, styles.halfInput]}
           placeholder="Category"
           value={category}
-          onChangeText={setCategory}
+          onChangeText={handleCategoryChange}
         />
         
         <TextInput
@@ -109,15 +92,15 @@ export function OrderItemForm({ onSubmit }: OrderItemFormProps) {
       
       <View style={styles.row}>
         <TextInput
-          style={[styles.input, styles.thirdInput, errors.quantity && styles.inputError]}
-          placeholder="Quantity *"
+          style={[styles.input, styles.thirdInput]}
+          placeholder="Quantity"
           value={quantity}
           onChangeText={setQuantity}
           keyboardType="numeric"
         />
         
         <TextInput
-          style={[styles.input, styles.thirdInput, errors.weight && styles.inputError]}
+          style={[styles.input, styles.thirdInput]}
           placeholder="Weight (kg)"
           value={weight}
           onChangeText={setWeight}
@@ -125,72 +108,13 @@ export function OrderItemForm({ onSubmit }: OrderItemFormProps) {
         />
         
         <TextInput
-          style={[styles.input, styles.thirdInput, errors.value && styles.inputError]}
+          style={[styles.input, styles.thirdInput]}
           placeholder="Value"
           value={value}
           onChangeText={setValue}
           keyboardType="decimal-pad"
         />
       </View>
-      
-      <View style={styles.row}>
-        {errors.quantity && <ThemedText style={styles.errorText}>{errors.quantity}</ThemedText>}
-        {errors.weight && <ThemedText style={styles.errorText}>{errors.weight}</ThemedText>}
-        {errors.value && <ThemedText style={styles.errorText}>{errors.value}</ThemedText>}
-      </View>
-
-      <View style={styles.row}>
-        <TextInput
-          style={[styles.input, styles.thirdInput]}
-          placeholder="Length"
-          value={length}
-          onChangeText={setLength}
-          keyboardType="decimal-pad"
-        />
-        
-        <TextInput
-          style={[styles.input, styles.thirdInput]}
-          placeholder="Width"
-          value={width}
-          onChangeText={setWidth}
-          keyboardType="decimal-pad"
-        />
-        
-        <TextInput
-          style={[styles.input, styles.thirdInput]}
-          placeholder="Height"
-          value={height}
-          onChangeText={setHeight}
-          keyboardType="decimal-pad"
-        />
-      </View>
-
-      <View style={styles.checkboxRow}>
-        <TouchableOpacity 
-          style={styles.checkbox} 
-          onPress={() => setIsFragile(!isFragile)}
-        >
-          <View style={[styles.checkboxInner, isFragile && styles.checkboxChecked]} />
-        </TouchableOpacity>
-        <ThemedText>Fragile</ThemedText>
-
-        <TouchableOpacity 
-          style={[styles.checkbox, styles.checkboxMarginLeft]} 
-          onPress={() => setRequiresSpecialHandling(!requiresSpecialHandling)}
-        >
-          <View style={[styles.checkboxInner, requiresSpecialHandling && styles.checkboxChecked]} />
-        </TouchableOpacity>
-        <ThemedText>Requires Special Handling</ThemedText>
-      </View>
-
-      <TextInput
-        style={[styles.input, styles.textArea]}
-        placeholder="Special Instructions"
-        value={specialInstructions}
-        onChangeText={setSpecialInstructions}
-        multiline
-        numberOfLines={3}
-      />
 
       <TouchableOpacity 
         style={styles.button}
@@ -214,14 +138,6 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
   },
-  inputError: {
-    borderColor: '#ff3b30',
-  },
-  errorText: {
-    color: '#ff3b30',
-    fontSize: 12,
-    marginBottom: 8,
-  },
   row: {
     flexDirection: 'row',
     gap: 12,
@@ -229,38 +145,9 @@ const styles = StyleSheet.create({
   halfInput: {
     flex: 1,
   },
-  thirdInput: {
+  thirdInput: {  // Add this style
     flex: 1,
-  },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: '#007AFF',
-    borderRadius: 4,
-    marginRight: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkboxMarginLeft: {
-    marginLeft: 16,
-  },
-  checkboxInner: {
-    width: 14,
-    height: 14,
-    borderRadius: 2,
-  },
-  checkboxChecked: {
-    backgroundColor: '#007AFF',
+    minWidth: 0, // Ensures the input doesn't overflow its container
   },
   button: {
     backgroundColor: '#007AFF',

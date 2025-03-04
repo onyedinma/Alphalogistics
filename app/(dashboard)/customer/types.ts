@@ -32,6 +32,11 @@ export interface Location {
   instructions?: string;
 }
 
+export interface OrderLocations {
+  pickup: Location;
+  delivery: Location;
+}
+
 export interface ContactDetails {
   name: string;
   phone: string;
@@ -72,10 +77,7 @@ export interface OrderDraft {
     vehicle: string;
     fee: number;
   };
-  locations: {
-    pickup: Location;
-    delivery: Location;
-  };
+  locations: OrderLocations;
   items: ItemDetails[];
   pricing: {
     itemValue: number;
@@ -139,4 +141,4 @@ export interface CreateOrderParams {
     type: 'card' | 'cash' | 'wallet';
     details?: any;
   };
-} 
+}

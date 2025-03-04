@@ -27,14 +27,22 @@ interface ItemDetailsScreenState {
   selectedImageIndex: number;
 }
 
-interface ItemFormData extends ItemDetails {
-  quantity: number;
-  weight: number;
-  value: number;
-  dimensions: {
-    length: number;
-    width: number;
-    height: number;
+interface ItemFormData {
+  category: CategoryType;
+  subcategory: string;
+  name: string;
+  quantity: string;
+  weight: string;
+  value: string;
+  imageUri?: string;
+  images?: string[];
+  isFragile?: boolean;
+  requiresSpecialHandling?: boolean;
+  specialInstructions?: string;
+  dimensions: {  // Make dimensions required
+    length: string;
+    width: string;
+    height: string;
   };
 }
 
@@ -592,13 +600,13 @@ const ItemDetailsScreen = () => {
     name: '',
     category: 'electronics' as CategoryType,
     subcategory: '',
-    quantity: 0,
-    weight: 0,
-    value: 0,
+    quantity: '',
+    weight: '',
+    value: '',
     isFragile: false,
     requiresSpecialHandling: false,
     specialInstructions: '',
-    dimensions: { length: 0, width: 0, height: 0 }
+    dimensions: { length: '', width: '', height: '' }
   });
   const [itemImages, setItemImages] = useState<string[]>([]);
   const [isEditing, setIsEditing] = useState(false);
@@ -619,12 +627,6 @@ const ItemDetailsScreen = () => {
           setItemList({
             items: orderDraft.items,
             ...calculateTotals(orderDraft.items)
-          });
-        } else {
-          setItemList({
-            items: [],
-            totalWeight: 0,
-            totalValue: 0
           });
         }
       } catch (error) {
@@ -694,54 +696,41 @@ const ItemDetailsScreen = () => {
       return;
     }
     
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      const orderDraft = await StorageService.getOrderDraft();
-      if (!orderDraft) throw new Error('No order draft found');
-
       const newItem: ItemDetails = {
         name: currentItem.name.trim(),
         category: currentItem.category,
         subcategory: currentItem.subcategory,
-        quantity: currentItem.quantity || 0,
-        weight:currentItem.weight || 0,
-        value: currentItem.value || 0,
+        quantity: (parseFloat(currentItem.quantity)) || 0,
+        weight: (parseFloat(currentItem.weight) || 0),
+        value: (parseFloat(currentItem.value) || 0),
         isFragile: currentItem.isFragile,
         requiresSpecialHandling: currentItem.requiresSpecialHandling,
         specialInstructions: currentItem.specialInstructions || '',
         dimensions: {
-          length: currentItem.dimensions.length,
-          width: currentItem.dimensions.width,
-          height: currentItem.dimensions.height
+          length: (parseFloat(currentItem.dimensions.length) || 0),
+          width: (parseFloat(currentItem.dimensions.width) || 0),
+          height: (parseFloat(currentItem.dimensions.height) || 0)
         },
         images: itemImages
       };
 
+      // Save new item in order draft
+      const orderDraft = await StorageService.getOrderDraft();
+      if (!orderDraft) throw new Error('No order draft found');
+      
       const updatedItems = [...(orderDraft.items || []), newItem];
       const totals = calculateTotals(updatedItems);
       const updatedDraft: OrderDraft = {
         ...orderDraft,
-        delivery: {
-          scheduledPickup: orderDraft.delivery.scheduledPickup,
-          vehicle: orderDraft.delivery.vehicle,
-          fee: orderDraft.delivery.fee
-        },
         items: updatedItems,
         pricing: {
           itemValue: totals.totalValue,
-          deliveryFee: orderDraft.delivery.fee,
-          total: totals.totalValue + orderDraft.delivery.fee
+          deliveryFee: orderDraft.delivery?.fee || 0,
+          total: totals.totalValue + (orderDraft.delivery?.fee || 0)
         }
       };
-
-      // Enhanced logging for debugging
-      console.log('Order Draft Components:');
-      console.log('Sender:', orderDraft.sender);
-      console.log('Receiver:', orderDraft.receiver);
-      console.log('Delivery:', updatedDraft.delivery);
-      console.log('Items:', updatedDraft.items);
-      console.log('Pricing:', updatedDraft.pricing);
-      console.log('Complete Order Draft:', updatedDraft);
 
       await StorageService.saveOrderDraft(updatedDraft);
       setItemList({ items: updatedItems, ...totals });
@@ -751,13 +740,13 @@ const ItemDetailsScreen = () => {
         name: '',
         category: 'electronics' as CategoryType,
         subcategory: '',
-        quantity: 0,
-        weight: 0,
-        value: 0,
+        quantity: '',
+        weight: '',
+        value: '',
         isFragile: false,
         requiresSpecialHandling: false,
         specialInstructions: '',
-        dimensions: { length: 0, width: 0, height: 0 }
+        dimensions: { length: '', width: '', height: '' }
       });
       setItemImages([]);
       Alert.alert('Success', 'Item added successfully');
@@ -889,7 +878,7 @@ const ItemDetailsScreen = () => {
               <Text style={styles.smallLabel}>Quantity</Text>
               <TextInput
                 style={[styles.input, styles.detailInput]}
-                value={String(currentItem.quantity)}
+                value={currentItem.quantity}
                 onChangeText={value => handleInputChange('quantity', value)}
                 keyboardType="numeric"
                 placeholder="Qty"
@@ -900,7 +889,7 @@ const ItemDetailsScreen = () => {
               <Text style={styles.smallLabel}>Weight (kg)</Text>
               <TextInput
                 style={[styles.input, styles.detailInput]}
-                value={String(currentItem.weight)}
+                value={currentItem.weight}
                 onChangeText={value => handleInputChange('weight', value)}
                 keyboardType="numeric"
                 placeholder="Weight"
@@ -911,7 +900,7 @@ const ItemDetailsScreen = () => {
               <Text style={styles.smallLabel}>Value (₦)</Text>
               <TextInput
                 style={[styles.input, styles.detailInput]}
-                value={String(currentItem.value)}
+                value={currentItem.value}
                 onChangeText={value => handleInputChange('value', value)}
                 keyboardType="numeric"
                 placeholder="Value"
@@ -926,10 +915,9 @@ const ItemDetailsScreen = () => {
           <Text style={styles.label}>Dimensions (cm) <Text style={{ fontSize: 12, color: '#999' }}>(optional)</Text></Text>
           <View style={[styles.row, styles.dimensionsContainer]}>
             <View style={styles.dimensionInputWrapper}>
-              <Text style={styles.smallLabel}>Length</Text>
               <TextInput
                 style={[styles.input, styles.dimensionInput]}
-                value={String(currentItem.dimensions.length)}
+                value={currentItem.dimensions.length}
                 onChangeText={value => {
                   const numericValue = value.replace(/[^0-9.]/g, '');
                   handleDimensionChange('length', numericValue);
@@ -938,12 +926,12 @@ const ItemDetailsScreen = () => {
                 placeholder="0"
                 placeholderTextColor="#999"
               />
+              <Text style={styles.dimensionLabel}>Length</Text>
             </View>
             <View style={styles.dimensionInputWrapper}>
-              <Text style={styles.smallLabel}>Width</Text>
               <TextInput
                 style={[styles.input, styles.dimensionInput]}
-                value={String(currentItem.dimensions.width)}
+                value={currentItem.dimensions.width}
                 onChangeText={value => {
                   const numericValue = value.replace(/[^0-9.]/g, '');
                   handleDimensionChange('width', numericValue);
@@ -952,12 +940,12 @@ const ItemDetailsScreen = () => {
                 placeholder="0"
                 placeholderTextColor="#999"
               />
+              <Text style={styles.dimensionLabel}>Width</Text>
             </View>
             <View style={styles.dimensionInputWrapper}>
-              <Text style={styles.smallLabel}>Height</Text>
               <TextInput
                 style={[styles.input, styles.dimensionInput]}
-                value={String(currentItem.dimensions.height)}
+                value={currentItem.dimensions.height}
                 onChangeText={value => {
                   const numericValue = value.replace(/[^0-9.]/g, '');
                   handleDimensionChange('height', numericValue);
@@ -966,6 +954,7 @@ const ItemDetailsScreen = () => {
                 placeholder="0"
                 placeholderTextColor="#999"
               />
+              <Text style={styles.dimensionLabel}>Height</Text>
             </View>
           </View>
         </View>

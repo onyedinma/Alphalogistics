@@ -13,6 +13,43 @@ export interface ContactDetails {
   pincode?: string;
 }
 
+export type CategoryType = 'electronics' | 'clothing' | 'documents' | 'food' | 'fragile' | 'other';
+
+// Base interface for form data
+export interface ItemFormBase {
+  name: string;
+  category: CategoryType;
+  subcategory: string;
+  isFragile: boolean;
+  requiresSpecialHandling: boolean;
+  specialInstructions: string;
+  images?: string[];
+}
+
+// Form interface with string values for inputs
+export interface ItemFormData extends ItemFormBase {
+  quantity: string;
+  weight: string;
+  value: string;
+  dimensions: {
+    length: string;
+    width: string;
+    height: string;
+  };
+}
+
+// Data interface with numeric values for storage
+export interface ItemDetails extends ItemFormBase {
+  quantity: number;
+  weight: number;
+  value: number;
+  dimensions: {
+    length: number;
+    width: number;
+    height: number;
+  };
+}
+
 // Consistently use the same types in OrderItem
 export interface OrderItem extends ItemDetails {
   id?: string;
@@ -42,42 +79,4 @@ export interface OrderDraft {
     deliveryFee: number;
     total: number;
   };
-}
-
-// Form data interface for handling string inputs
-export interface ItemFormData {
-  name: string;
-  category: string;
-  subcategory: string;
-  quantity: string;  // String for form input
-  weight: string;    // String for form input
-  value: string;     // String for form input
-  isFragile: boolean;
-  requiresSpecialHandling: boolean;
-  specialInstructions: string;
-  dimensions: {
-    length: string;
-    width: string;
-    height: string;
-  };
-  images?: string[];
-}
-
-// Actual item details interface with proper types
-export interface ItemDetails {
-  name: string;
-  category: string;
-  subcategory: string;
-  quantity: number;  // Number for storage
-  weight: number;    // Number for storage
-  value: number;     // Number for storage
-  isFragile: boolean;
-  requiresSpecialHandling: boolean;
-  specialInstructions: string;
-  dimensions: {
-    length: number;
-    width: number;
-    height: number;
-  };
-  images?: string[];
 }
