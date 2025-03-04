@@ -13,19 +13,9 @@ export interface ContactDetails {
   pincode?: string;
 }
 
-// Define the OrderItem type
-export interface OrderItem {
-  id: string; // Assuming you have an id field
-  name: string;
-  category: string;
-  subcategory: string;
-  quantity: number;
-  weight: number; // Change to number
-  value: number; // Change to number
-  description: string;
-  isFragile?: boolean;
-  requiresSpecialHandling?: boolean;
-  specialInstructions?: string;
+// Consistently use the same types in OrderItem
+export interface OrderItem extends ItemDetails {
+  id?: string;
 }
 
 export interface OrderDraft {
@@ -54,7 +44,7 @@ export interface OrderDraft {
   };
 }
 
-// Update ItemFormData interface to handle string inputs
+// Form data interface for handling string inputs
 export interface ItemFormData {
   name: string;
   category: string;
@@ -70,6 +60,7 @@ export interface ItemFormData {
     width: string;
     height: string;
   };
+  images?: string[];
 }
 
 // Actual item details interface with proper types
@@ -84,9 +75,9 @@ export interface ItemDetails {
   requiresSpecialHandling: boolean;
   specialInstructions: string;
   dimensions: {
-    length: string;
-    width: string;
-    height: string;
+    length: number;
+    width: number;
+    height: number;
   };
   images?: string[];
 }
