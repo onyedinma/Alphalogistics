@@ -758,6 +758,104 @@ const ItemDetailsScreen = () => {
     }
   };
 
+  const handleEditItem = (item: ItemDetails, index: number) => {
+    // Convert numeric values to strings for the form
+    setCurrentItem({
+      name: item.name,
+      category: item.category as CategoryType,
+      subcategory: item.subcategory,
+      quantity: item.quantity.toString(),
+      weight: item.weight.toString(),
+      value: item.value.toString(),
+      isFragile: item.isFragile || false,
+      requiresSpecialHandling: item.requiresSpecialHandling || false,
+      specialInstructions: item.specialInstructions || '',
+      dimensions: {
+        length: item.dimensions?.length.toString() || '',
+        width: item.dimensions?.width.toString() || '',
+        height: item.dimensions?.height.toString() || ''
+      }
+    });
+    setItemImages(item.images || []);
+    setIsEditing(true);
+    setEditingItem(item);
+  };
+
+  const handleUpdateItem = async () => {
+    const validationErrors = validateForm();
+    if (validationErrors.length > 0) {
+      Alert.alert('Validation Error', validationErrors.join('\n'));
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const updatedItem: ItemDetails = {
+        name: currentItem.name.trim(),
+        category: currentItem.category,
+        subcategory: currentItem.subcategory,
+        quantity: parseFloat(currentItem.quantity) || 0,
+        weight: parseFloat(currentItem.weight) || 0,
+        value: parseFloat(currentItem.value) || 0,
+        isFragile: currentItem.isFragile,
+        requiresSpecialHandling: currentItem.requiresSpecialHandling,
+        specialInstructions: currentItem.specialInstructions || '',
+        dimensions: {
+          length: parseFloat(currentItem.dimensions.length) || 0,
+          width: parseFloat(currentItem.dimensions.width) || 0,
+          height: parseFloat(currentItem.dimensions.height) || 0
+        },
+        images: itemImages
+      };
+
+      const updatedItems = itemList.items.map(item => 
+        item === editingItem ? updatedItem : item
+      );
+
+      const totals = calculateTotals(updatedItems);
+      
+      // Update order draft
+      const orderDraft = await StorageService.getOrderDraft();
+      if (!orderDraft) throw new Error('No order draft found');
+
+      const updatedDraft: OrderDraft = {
+        ...orderDraft,
+        items: updatedItems,
+        pricing: {
+          itemValue: totals.totalValue,
+          deliveryFee: orderDraft.delivery?.fee || 0,
+          total: totals.totalValue + (orderDraft.delivery?.fee || 0)
+        }
+      };
+
+      await StorageService.saveOrderDraft(updatedDraft);
+      setItemList({ items: updatedItems, ...totals });
+      
+      // Reset form
+      setCurrentItem({
+        name: '',
+        category: 'electronics' as CategoryType,
+        subcategory: '',
+        quantity: '',
+        weight: '',
+        value: '',
+        isFragile: false,
+        requiresSpecialHandling: false,
+        specialInstructions: '',
+        dimensions: { length: '', width: '', height: '' }
+      });
+      setItemImages([]);
+      setIsEditing(false);
+      setEditingItem(null);
+      Alert.alert('Success', 'Item updated successfully');
+    } catch (error) {
+      console.error('Error updating item:', error);
+      Alert.alert('Error', 'Failed to update item. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const renderItem = (item: ItemDetails, index: number) => (
     <View key={index} style={styles.itemCard}>
       <View style={styles.itemHeader}>
@@ -766,7 +864,7 @@ const ItemDetailsScreen = () => {
           <Text style={styles.itemCategory}>{item.category} - {item.subcategory}</Text>
         </View>
         <View style={styles.itemActions}>
-          <TouchableOpacity onPress={() => {/* Implement edit if needed */}}>
+          <TouchableOpacity onPress={() => handleEditItem(item, index)}>
             <Ionicons name="create-outline" size={24} color="#666" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => {
@@ -1046,8 +1144,14 @@ const ItemDetailsScreen = () => {
         </View>
 
         {/* Add/Update Item Button */}
-        <TouchableOpacity style={styles.addButton} onPress={handleAddItem} disabled={isLoading}>
-          <Text style={styles.addButtonText}>{isLoading ? 'Adding...' : isEditing ? 'Update Item' : 'Add Item'}</Text>
+        <TouchableOpacity 
+          style={styles.addButton} 
+          onPress={isEditing ? handleUpdateItem : handleAddItem} 
+          disabled={isLoading}
+        >
+          <Text style={styles.addButtonText}>
+            {isLoading ? 'Saving...' : isEditing ? 'Update Item' : 'Add Item'}
+          </Text>
         </TouchableOpacity>
 
         {/* Items List */}
