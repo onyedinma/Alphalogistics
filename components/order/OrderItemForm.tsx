@@ -26,7 +26,14 @@ export function OrderItemForm({ onSubmit }: OrderItemFormProps) {
       quantity: parseInt(quantity, 10) || 1,
       weight: parseFloat(weight) || 0,
       value: parseFloat(value) || 0,
-      description: '' // Added missing required description field
+      isFragile: false,
+      requiresSpecialHandling: false,
+      specialInstructions: '',
+      dimensions: {
+        length: 0,
+        width: 0,
+        height: 0
+      }
     });
 
     // Reset form
