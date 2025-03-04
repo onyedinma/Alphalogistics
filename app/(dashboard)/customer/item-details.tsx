@@ -1,13 +1,12 @@
 import auth from '@react-native-firebase/auth';
 import { StorageService } from '@/services/storage';
+import * as ImagePicker from 'expo-image-picker';  // Add this import
 import { ItemDetails, OrderDraft, CategoryType } from './types';
-import { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Platform, StyleSheet, Modal, Image, Pressable, Animated } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React from 'react';
+import React, { useState, useEffect } from 'react';  // Add useState and useEffect import here
 import FastImage from 'react-native-fast-image';
 
 import { COLORS, SHADOWS } from '@/constants/theme';
@@ -1115,7 +1114,7 @@ const ItemDetailsScreen = () => {
                   setIsImageLoading(true);
                   try {
                     const result = await ImagePicker.launchImageLibraryAsync({
-                      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                      mediaTypes: ImagePicker.MediaTypeOptions.Images, // Fix: Use MediaTypeOptions instead of MediaType
                       allowsEditing: true,
                       quality: 0.8,
                       allowsMultipleSelection: false
