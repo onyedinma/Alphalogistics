@@ -13,7 +13,7 @@ import { Stack, router } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { StorageService } from '@/services/storage';
-import { OrderDraft, ContactDetails, ItemDetails } from './types';  // Add ItemDetails to imports
+import { OrderDraft, ContactDetails, ItemDetails, SenderDetails } from './types';  // Add ItemDetails to imports
 import { COLORS, SHADOWS } from '@/constants/theme';
 
 export default function DeliveryDetailsScreen() {
@@ -23,12 +23,11 @@ export default function DeliveryDetailsScreen() {
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
   const [items, setItems] = useState<ItemDetails[]>([]);
   
-  const [senderDetails, setSenderDetails] = useState<ContactDetails>({
+  const [senderDetails, setSenderDetails] = useState<SenderDetails>({
     name: '',
     phone: '',
     address: '',
-    state: '',
-    deliveryMethod: 'delivery',
+    state: ''
   });
 
   const [receiverDetails, setReceiverDetails] = useState<ContactDetails>({
@@ -39,7 +38,7 @@ export default function DeliveryDetailsScreen() {
     deliveryMethod: 'delivery',
     landmark: '',
     locality: '',
-    city: '',
+    city: ''
   });
 
   // Add new state for expanded sections
@@ -65,10 +64,12 @@ export default function DeliveryDetailsScreen() {
         // The draft contains the items and pricing information 
         // that was saved in the previous screen
         if (draft.sender) {
-          // Add required deliveryMethod property when setting sender details
+          // Remove deliveryMethod when setting sender details
           setSenderDetails({
-            ...draft.sender,
-            deliveryMethod: 'delivery' // Set default delivery method for sender
+            name: draft.sender.name,
+            phone: draft.sender.phone,
+            address: draft.sender.address,
+            state: draft.sender.state
           });
         }
         if (draft.receiver) {
@@ -135,8 +136,10 @@ export default function DeliveryDetailsScreen() {
       const updatedDraft: OrderDraft = {
         ...draft,
         sender: {
-          ...senderDetails,
-          deliveryMethod: 'delivery'
+          name: senderDetails.name,
+          phone: senderDetails.phone,
+          address: senderDetails.address,
+          state: senderDetails.state
         },
         receiver: receiverDetails,
         delivery: {

@@ -62,9 +62,9 @@ export default function CheckoutScreen() {
       // Set item list with the loaded items
       const items = draft.items;
       const totalWeight = items.reduce((sum: number, item) => 
-        sum + (parseFloat(item.weight) * parseInt(item.quantity)), 0);
+        sum + ((item.weight) * (item.quantity)), 0);
       const totalValue = items.reduce((sum: number, item) => 
-        sum + (parseFloat(item.value) * parseInt(item.quantity)), 0);
+        sum + ((item.value) * (item.quantity)), 0);
 
       setItemList({
         items,
