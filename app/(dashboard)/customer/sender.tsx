@@ -29,6 +29,7 @@ interface FormData {
   address: string;
   state: string;
   phone: string;
+  deliveryMethod: 'pickup' | 'delivery';
 }
 
 interface SearchParams {
@@ -59,7 +60,8 @@ export default function SenderDetails() {
     name: '',
     address: '',
     state: '',
-    phone: ''
+    phone: '',
+    deliveryMethod: 'pickup'
   });
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -250,6 +252,7 @@ export default function SenderDetails() {
           address: formData.address.trim(),
           state: formData.state.trim(),
           phone: formData.phone.trim(),
+          deliveryMethod: formData.deliveryMethod
         },
       };
 

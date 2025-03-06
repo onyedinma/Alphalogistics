@@ -870,7 +870,7 @@ const ItemDetailsScreen = () => {
       const orderDraft = await StorageService.getOrderDraft();
       if (!orderDraft) throw new Error('No order draft found');
 
-      // Update order draft with final items and totals
+      // This is what gets passed to the delivery-details screen via StorageService
       const updatedDraft: OrderDraft = {
         ...orderDraft,
         items: itemList.items,

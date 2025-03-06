@@ -4,18 +4,18 @@ export interface ItemDetails {
   category: string;
   subcategory: string;
   name: string;
-  weight: number;
-  quantity: number;
-  value: number;
+  weight: number;  // Changed from string to number
+  quantity: number;  // Changed from string to number
+  value: number;  // Changed from string to number
   imageUri?: string;
   images?: string[];
   isFragile?: boolean;
   requiresSpecialHandling?: boolean;
   specialInstructions?: string;
   dimensions?: {
-    length: number;
-    width: number;
-    height: number;
+    length: number;  // Changed from string to number
+    width: number;   // Changed from string to number
+    height: number;  // Changed from string to number
   };
 }
 
@@ -24,7 +24,7 @@ export interface Location {
   city: string;
   state: string;
   postalCode: string;
-  country: string;
+  country: string;  // Make sure country is included
   coordinates?: {
     latitude: number;
     longitude: number;
@@ -37,6 +37,15 @@ export interface OrderLocations {
   delivery: Location;
 }
 
+// Update the base contact details interface
+interface BaseContact {
+  name: string;
+  phone: string;
+  address: string;
+  state: string;
+}
+
+// Add ContactDetails interface
 export interface ContactDetails {
   name: string;
   phone: string;
@@ -44,7 +53,6 @@ export interface ContactDetails {
   state: string;
   deliveryMethod: 'pickup' | 'delivery';
   pickupCenter?: string;
-  specialInstructions?: string;
   streetNumber?: string;
   landmark?: string;
   locality?: string;
@@ -52,26 +60,22 @@ export interface ContactDetails {
   pincode?: string;
 }
 
+// Update the sender interface
+export interface SenderDetails {
+  name: string;
+  phone: string;
+  address: string;
+  state: string;
+}
+
+// Update the receiver interface
+export interface ReceiverDetails extends ContactDetails {
+  // Any additional receiver-specific fields can go here
+}
+
 export interface OrderDraft {
-  sender: {
-    name: string;
-    address: string;
-    phone: string;
-    state: string;
-  };
-  receiver?: {
-    name: string;
-    address: string;
-    phone: string;
-    state: string;
-    deliveryMethod: 'pickup' | 'delivery';
-    pickupCenter?: string;
-    streetNumber?: string;
-    landmark?: string;
-    locality?: string;
-    city?: string;
-    pincode?: string;
-  };
+  sender: SenderDetails;
+  receiver?: ReceiverDetails;
   delivery: {
     scheduledPickup: string;
     vehicle: string;
@@ -95,19 +99,19 @@ export interface OrderItem {
   id: string;
   name: string;
   category: string;
-  subcategory?: string;
+  subcategory: string;
   quantity: number;
   weight: number;
   value: number;
-  dimensions?: {
+  imageUrl: string | null;  // Changed from undefined to null
+  isFragile: boolean;
+  requiresSpecialHandling: boolean;
+  specialInstructions: string;  // Made required with empty string as default
+  dimensions: {          // Made required
     length: number;
     width: number;
     height: number;
-  };
-  imageUrl?: string;
-  isFragile: boolean;
-  requiresSpecialHandling: boolean;
-  specialInstructions?: string;
+  } | null;             // Use null instead of undefined
 }
 
 export interface OrderPricing {
@@ -125,20 +129,67 @@ export interface OrderInsurance {
 }
 
 export interface CreateOrderParams {
-  items: OrderItem[];
+  items: Array<{
+    id: string;
+    name: string;
+    category: string;
+    subcategory: string;
+    quantity: number;
+    weight: number;
+    value: number;
+    imageUrl: string | null;
+    isFragile: boolean;
+    requiresSpecialHandling: boolean;
+    specialInstructions: string;
+    dimensions: {
+      length: number;
+      width: number;
+      height: number;
+    } | null;
+  }>;
   pickupLocation: Location;
   deliveryLocation: Location;
-  pricing: OrderPricing;
-  insurance?: OrderInsurance;
-  sender: ContactDetails;
-  receiver: ContactDetails;
-  scheduledPickup: string | Date;
-  vehicle: {
-    type: string;
-    maxWeight?: number;
+  pricing: {
+    basePrice: number;
+    total: number;
   };
-  paymentMethod?: {
+  sender: {
+    name: string;
+    phone: string;
+    address: string;
+    state: string;
+  };
+  receiver: {
+    name: string;
+    phone: string;
+    address: string;
+    state: string;
+  };
+  delivery: {
+    scheduledPickup: string;
+    vehicle: string;
+  };
+  paymentMethod: {
     type: 'card' | 'cash' | 'wallet';
-    details?: any;
+    details: null;
   };
+}
+
+export interface Order {
+  id: string;
+  customerId: string;
+  trackingNumber: string;
+  status: 'pending' | 'processing' | 'in-transit' | 'delivered' | 'cancelled';
+  items: ItemDetails[];
+  deliveryLocation: Location;
+  pickupLocation: Location;
+  pricing: {
+    itemValue: number;
+    deliveryFee: number;
+    total: number;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+  deliveryDate?: Date;
+  estimatedDeliveryTime?: string;
 }

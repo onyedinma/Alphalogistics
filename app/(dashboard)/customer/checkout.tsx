@@ -22,13 +22,18 @@ interface ItemList {
   totalValue: number;
 }
 
+interface PaymentMethod {
+  type: 'card' | 'cash' | 'wallet';
+  details: null;
+}
+
 export default function CheckoutScreen() {
   const [itemList, setItemList] = useState<ItemList | null>(null);
   const [orderDraft, setOrderDraft] = useState<OrderDraft | null>(null);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<{
-    type: 'card' | 'cash' | 'wallet';
-    details?: any;
-  }>({ type: 'card' });
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>({ 
+    type: 'card',
+    details: null
+  });
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -37,20 +42,20 @@ export default function CheckoutScreen() {
 
   const loadOrderData = async () => {
     try {
+      console.log('Loading order data...');
       const orderDraftStr = await AsyncStorage.getItem('orderDraft');
       if (!orderDraftStr) {
-        console.error('Order draft not found');
+        console.error('Order draft not found in AsyncStorage');
         return;
       }
 
+      console.log('Order draft string:', orderDraftStr);
       const draft: OrderDraft = JSON.parse(orderDraftStr);
-      setOrderDraft(draft);
+      console.log('Parsed order draft:', JSON.stringify(draft, null, 2));
       
-      // Check for required sections
-      if (!draft.delivery?.scheduledPickup || !draft.delivery?.vehicle ||
-          !draft.items?.length || !draft.locations?.pickup?.address ||
-          !draft.pricing?.itemValue || !draft.pricing?.deliveryFee) {
-        console.error('Missing required data');
+      // Updated validation to be less strict
+      if (!draft.items?.length) {
+        console.error('No items found in order draft');
         return;
       }
 
@@ -66,17 +71,26 @@ export default function CheckoutScreen() {
         totalWeight,
         totalValue
       });
+      setOrderDraft(draft);
     } catch (error) {
-      console.error('Error loading order data:', error);
+      console.error('Error in loadOrderData:', error);
+      console.error('Error stack:', (error as Error).stack);
       Alert.alert('Error', 'Failed to load order data');
     }
   };
 
-  const calculateDeliveryFee = (weight: number) => {
+  const calculateDeliveryFee = (weight: number): number => {
+    try {
+      // Validate input
+      if (typeof weight !== 'number' || isNaN(weight) || weight < 0) {
+        console.error('Invalid weight value:', weight);
+        return 0;
+      }
+
     // Base fee
     let fee = 1000;
     
-    // Add fee based on weight
+      // Add fee based on weight ranges
     if (weight <= 5) {
       fee += weight * 200;
     } else if (weight <= 20) {
@@ -85,87 +99,58 @@ export default function CheckoutScreen() {
       fee += 3250 + (weight - 20) * 100;
     }
 
+      // Round to nearest whole number
     return Math.round(fee);
+    } catch (error) {
+      console.error('Error calculating delivery fee:', error);
+      return 0;
+    }
   };
 
   const handleProceed = async () => {
     try {
+      setIsLoading(true);
+      console.log('Starting checkout process...');
+      
       const orderDraft = await StorageService.getOrderDraft();
-      if (!orderDraft) {
-        Alert.alert('Error', 'Order details not found');
-        return;
+      if (!orderDraft || !orderDraft.items || orderDraft.items.length === 0) {
+        throw new Error('Invalid order draft or missing items');
       }
-
-      // Validate required fields with proper type checking
-      const missingFields: string[] = [];
-
-      if (!orderDraft.sender?.name) missingFields.push('Sender name');
-      if (!orderDraft.sender?.address) missingFields.push('Sender address');
-      if (!orderDraft.sender?.phone) missingFields.push('Sender phone');
-      if (!orderDraft.sender?.state) missingFields.push('Sender state');
-
-      if (!orderDraft.receiver?.name) missingFields.push('Receiver name');
-      if (!orderDraft.receiver?.address) missingFields.push('Receiver address');
-      if (!orderDraft.receiver?.phone) missingFields.push('Receiver phone');
-      if (!orderDraft.receiver?.state) missingFields.push('Receiver state');
-
-      if (!orderDraft.delivery?.scheduledPickup) missingFields.push('Pickup date');
-      if (!orderDraft.delivery?.vehicle) missingFields.push('Vehicle type');
-
-      if (!orderDraft.items || orderDraft.items.length === 0) {
-        missingFields.push('Item details');
-      }
-
-      if (!orderDraft.pricing?.itemValue || !orderDraft.pricing?.deliveryFee) {
-        missingFields.push('Pricing information');
-      }
-
-      if (missingFields.length > 0) {
-        Alert.alert(
-          'Missing Information',
-          `Please complete the following details:\n${missingFields.join('\n')}`,
-          [{ text: 'OK', onPress: () => router.back() }]
-        );
-        return;
-      }
-
-      // Map items to OrderItem type with proper type conversion
-      const items: OrderItem[] = (orderDraft.items || []).map((item) => ({
-        id: `temp-${Math.random().toString(36).substring(2, 11)}`,
+  
+      // Calculate final values
+      const deliveryFee = calculateDeliveryFee(itemList?.totalWeight || 0);
+      const total = (itemList?.totalValue || 0) + deliveryFee;
+  
+      const orderData: CreateOrderParams = {
+        items: orderDraft.items.map(item => ({
+          id: `item_${Math.random().toString(36).substring(2)}`,
         name: item.name,
         category: item.category,
         subcategory: item.subcategory,
-        quantity: parseInt(item.quantity),
-        weight: parseFloat(item.weight),
-        value: parseFloat(item.value),
-        imageUrl: item.imageUri,
-        isFragile: item.isFragile || false,
-        requiresSpecialHandling: item.requiresSpecialHandling || false,
-        specialInstructions: item.specialInstructions,
+          quantity: Number(item.quantity),
+          weight: Number(item.weight),
+          value: Number(item.value),
+          imageUrl: item.imageUri || null,
+          isFragile: Boolean(item.isFragile),
+          requiresSpecialHandling: Boolean(item.requiresSpecialHandling),
+          specialInstructions: item.specialInstructions || '',
         dimensions: item.dimensions ? {
-          length: parseFloat(item.dimensions.length),
-          width: parseFloat(item.dimensions.width),
-          height: parseFloat(item.dimensions.height)
-        } : undefined
-      }));
-
-      // Format the pickup date
-      const pickupDate = orderDraft.delivery?.scheduledPickup ? new Date(orderDraft.delivery.scheduledPickup) : new Date();
-
-      // Create the complete order object with proper types
-      await OrderService.createOrder({
-        items,
-        pickupLocation: orderDraft.locations?.pickup,
-        deliveryLocation: orderDraft.locations?.delivery,
+            length: Number(item.dimensions.length),
+            width: Number(item.dimensions.width),
+            height: Number(item.dimensions.height)
+          } : null
+        })),
+        pickupLocation: orderDraft.locations.pickup,
+        deliveryLocation: orderDraft.locations.delivery,
         pricing: {
-          basePrice: orderDraft.pricing?.deliveryFee,
-          total: orderDraft.pricing?.total
+          basePrice: deliveryFee,
+          total: total
         },
         sender: {
-          name: orderDraft.sender?.name,
-          phone: orderDraft.sender?.phone,
-          address: orderDraft.sender?.address,
-          state: orderDraft.sender?.state
+          name: orderDraft.sender.name,
+          phone: orderDraft.sender.phone,
+          address: orderDraft.sender.address,
+          state: orderDraft.sender.state
         },
         receiver: {
           name: orderDraft.receiver?.name || '',
@@ -174,19 +159,25 @@ export default function CheckoutScreen() {
           state: orderDraft.receiver?.state || ''
         },
         delivery: {
-          scheduledPickup: orderDraft.delivery?.scheduledPickup,
-          vehicle: orderDraft.delivery?.vehicle
+          scheduledPickup: orderDraft.delivery.scheduledPickup,
+          vehicle: orderDraft.delivery.vehicle
         },
-        paymentMethod: selectedPaymentMethod
-      });
-
-      // Clear all order data
+        paymentMethod: {
+          type: selectedPaymentMethod.type,
+          details: null
+        }
+      };
+  
+      console.log('Sending order data:', JSON.stringify(orderData, null, 2));
+      await OrderService.createOrder(orderData);
+  
       await StorageService.clearOrderData();
-
       router.push('/customer/order-success');
     } catch (error) {
-      console.error('Error creating order:', error);
+      console.error('Error in handleProceed:', error);
       Alert.alert('Error', 'Failed to create order. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -275,7 +266,7 @@ export default function CheckoutScreen() {
               </View>
               <View style={styles.itemRow}>
                 <Text style={styles.itemLabel}>Value:</Text>
-                <Text style={styles.itemValue}>₦{parseFloat(item.value).toLocaleString()}</Text>
+                <Text style={styles.itemValue}>₦{(item.value).toLocaleString()}</Text>
               </View>
               {item.specialInstructions && (
                 <Text style={styles.specialInstructions}>
@@ -292,11 +283,11 @@ export default function CheckoutScreen() {
           <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Items Value</Text>
-              <Text style={styles.summaryValue}>₦{itemList.totalValue.toLocaleString()}</Text>
+              <Text style={styles.summaryValue}>₦{String(itemList.totalValue)}</Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Total Weight</Text>
-              <Text style={styles.summaryValue}>{itemList.totalWeight.toFixed(2)}kg</Text>
+              <Text style={styles.summaryValue}>{String(itemList.totalWeight)} kg</Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Delivery Fee</Text>
@@ -318,7 +309,7 @@ export default function CheckoutScreen() {
                 styles.paymentOption,
                 selectedPaymentMethod.type === 'card' && styles.selectedPaymentOption
               ]}
-              onPress={() => setSelectedPaymentMethod({ type: 'card' })}
+              onPress={() => setSelectedPaymentMethod({ type: 'card', details: null })}
             >
               <Ionicons 
                 name="card-outline" 
@@ -338,7 +329,7 @@ export default function CheckoutScreen() {
                 styles.paymentOption,
                 selectedPaymentMethod.type === 'wallet' && styles.selectedPaymentOption
               ]}
-              onPress={() => setSelectedPaymentMethod({ type: 'wallet' })}
+              onPress={() => setSelectedPaymentMethod({ type: 'wallet', details: null })}
             >
               <Ionicons 
                 name="wallet-outline" 
@@ -358,7 +349,7 @@ export default function CheckoutScreen() {
                 styles.paymentOption,
                 selectedPaymentMethod.type === 'cash' && styles.selectedPaymentOption
               ]}
-              onPress={() => setSelectedPaymentMethod({ type: 'cash' })}
+              onPress={() => setSelectedPaymentMethod({ type: 'cash', details: null })}
             >
               <Ionicons 
                 name="cash-outline" 

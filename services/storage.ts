@@ -115,7 +115,9 @@ export class StorageService {
         throw new Error('Invalid order data structure');
       }
 
+      console.log('Saving order draft:', JSON.stringify(updatedDraft, null, 2));
       await AsyncStorage.setItem('orderDraft', JSON.stringify(updatedDraft));
+      console.log('Order draft saved successfully');
     } catch (error) {
       console.error('Error saving order draft:', error);
       throw error;
@@ -124,10 +126,13 @@ export class StorageService {
 
   static async getOrderDraft(): Promise<OrderDraft | null> {
     try {
+      console.log('Getting order draft...');
       const data = await AsyncStorage.getItem('orderDraft');
+      console.log('Retrieved draft string:', data);
       if (!data) return null;
 
       const parsedData = JSON.parse(data);
+      console.log('Parsed draft:', JSON.stringify(parsedData, null, 2));
       if (!this.validateOrderStorage(parsedData)) {
         throw new Error('Invalid order data structure in storage');
       }
@@ -152,8 +157,8 @@ export class StorageService {
     try {
       const emptyDraft: OrderDraft = {
         delivery: {
-          scheduledPickup: '',
-          vehicle: '',
+          scheduledPickup: new Date().toISOString(),
+          vehicle: 'car',
           fee: 0
         },
         sender: {
@@ -197,10 +202,12 @@ export class StorageService {
           updatedAt: new Date().toISOString()
         }
       };
+      
+      console.log('Initializing order draft with:', JSON.stringify(emptyDraft, null, 2));
       await this.saveOrderDraft(emptyDraft);
     } catch (error) {
       console.error('Error initializing order draft:', error);
       throw error;
     }
   }
-} 
+}

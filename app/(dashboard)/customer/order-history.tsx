@@ -4,9 +4,10 @@ import { Stack, router } from 'expo-router';
 import { ThemedText } from '@/components/ThemedText';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
-import { Order } from '@/types';
+import { Order } from './types';
+import { Ionicons } from '@expo/vector-icons';  // Add this import
 import { TouchableOpacity } from 'react-native-gesture-handler';
-import { Ionicons } from '@expo/vector-icons';
+
 export default function OrderHistory() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -241,4 +242,4 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
-}); 
+});
