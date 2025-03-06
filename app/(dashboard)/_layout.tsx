@@ -24,27 +24,18 @@ export default function DashboardLayout() {
       <Tabs.Screen
         name="customer"
         options={{
-          title: 'Customer',
+          title: 'Orders',
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
+            <Ionicons name="cube-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
           tabBarIcon: ({ color, size }: { color: string; size: number }) => (
             <Ionicons name="person-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="staff"
-        options={{
-          title: 'Staff',
-          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-            <Ionicons name="briefcase-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="delivery"
-        options={{
-          title: 'Delivery',
-          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-            <Ionicons name="bicycle-outline" size={size} color={color} />
           ),
         }}
       />

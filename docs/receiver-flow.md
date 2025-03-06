@@ -143,4 +143,75 @@ const handleError = (error: any, context: string) => {
 2. Use TypeScript interfaces for type safety
 3. Implement proper error handling
 4. Add loading states during async operations
-5. Keep AsyncStorage operations consistent 
+5. Keep AsyncStorage operations consistent
+
+# Receiver Flow Implementation
+
+## Overview
+The receiver flow handles delivery method selection, address management, and contact information collection.
+
+## Key Components
+
+### State Management
+```typescript
+// Receiver state interface
+interface ReceiverDetails extends ContactDetails {
+  name: string;
+  phone: string;
+  address: string;
+  state: string;
+  deliveryMethod: 'pickup' | 'delivery';
+  landmark?: string;
+  locality?: string;
+  city?: string;
+}
+
+// Form validation
+const validateForm = () => {
+  const errors: string[] = [];
+  if (!receiverDetails.name) errors.push('Receiver name is required');
+  if (!receiverDetails.phone) errors.push('Receiver phone is required');
+  if (deliveryMethod === 'delivery' && !receiverDetails.address) {
+    errors.push('Delivery address is required');
+  }
+  return errors;
+};
+```
+
+### Data Persistence
+```typescript
+const handleSubmit = async () => {
+  const draft = await StorageService.getOrderDraft();
+  const updatedDraft: OrderDraft = {
+    ...draft,
+    receiver: receiverDetails,
+    delivery: {
+      scheduledPickup: selectedDate.toISOString(),
+      vehicle: selectedVehicle,
+      fee: deliveryFee
+    }
+  };
+  await StorageService.saveOrderDraft(updatedDraft);
+};
+```
+
+## Implementation Notes
+
+### Delivery Method Selection
+1. Toggle between 'delivery' and 'pickup'
+2. Show/hide address fields based on selection
+3. Update validation rules accordingly
+4. Preserve data during method changes
+
+### Address Handling
+1. Collapsible section design
+2. Optional fields for landmarks
+3. State selection validation
+4. Address format standardization
+
+### Best Practices
+1. Real-time validation
+2. Incremental data saving
+3. Clear error messages
+4. Type-safe state management
+5. Proper cleanup on unmount

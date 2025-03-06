@@ -1,105 +1,81 @@
 # Customer Module Documentation
 
 ## Overview
-The customer module handles the entire order creation and management flow for customers in the Alphalogistics application. This document outlines the core functionality, screens, and data flow.
+The customer module manages the order creation and tracking flow in Alphalogistics. 
 
 ## Screens Flow
 ```mermaid
 graph TD
-    A[Dashboard] --> B[Create Order]
-    B --> C[Item Details]
-    C --> D[Delivery Details]
-    D --> E[Checkout]
-    E --> F[Order Success]
-    A --> G[Active Orders]
-    A --> H[Order History]
-    G --> I[Order Details]
-    H --> I
+    A[Dashboard] --> B[Item Details]
+    B --> C[Delivery Details]
+    C --> D[Checkout]
+    D --> E[Order Success]
+    A --> F[Active Orders]
+    A --> G[Order History]
+    F --> H[Order Details]
+    G --> H
 ```
 
-## Core Components
+## Key Components
 
 ### 1. Item Details Screen
-**Location**: `/app/(dashboard)/customer/item-details.tsx`
-
-**Purpose**: Allows customers to add items to their order.
+**Purpose**: Item management for orders
 
 **Key Features**:
-- Item category and subcategory selection
-- Item details input (name, weight, value, quantity)
+- Category and subcategory selection with validation
+- Detailed item information input
+- Image upload with size/type validation
 - Special handling options
-- Image upload capability
-- Running total calculation
+- Item list management with totals
 
-**Important Functions**:
+**Core Functions**:
 ```typescript
-validateForm(): string[] // Validates item input
-handleAddItem(): Promise<void> // Adds item to order draft
-handleUpdateItem(index: number, updates: Partial<ItemDetails>): void // Updates existing item
-calculateTotals(items: ItemDetails[]): { totalWeight: number; totalValue: number }
+validateForm(): string[] // Weight range and required field validation
+handleAddItem(): Promise<void> // Add item with proper number handling
+calculateDeliveryFee(weight: number): number // Progressive fee calculation
 ```
 
-### 2. Delivery Details Screen
-**Location**: `/app/(dashboard)/customer/delivery-details.tsx`
-
-**Purpose**: Captures sender and receiver information, delivery preferences.
+### 2. Delivery Details Screen 
+**Purpose**: Sender/receiver information and delivery preferences
 
 **Key Features**:
-- Sender/receiver contact details
-- Delivery method selection (pickup/delivery)
-- Vehicle type selection
-- Delivery scheduling
+- Collapsible sections for better UX
+- Dynamic delivery method handling
+- Real-time delivery fee calculation
+- Vehicle type selection with weight limits
 
-**Important Functions**:
+**Core Functions**:
 ```typescript
-validateForm(): string[] // Validates delivery details
-calculateDeliveryFee(weight: number): number // Calculates delivery fee based on weight
-handleSubmit(): Promise<void> // Saves delivery details and proceeds to checkout
+validateForm(): string[] // Context-aware validation
+calculateDeliveryFee(weight: number): number
+handleSubmit(): Promise<void>
 ```
 
 ### 3. Storage Service
-**Location**: `/services/storage.ts`
-
-**Purpose**: Manages order draft persistence.
+**Purpose**: Order draft management
 
 **Key Methods**:
 ```typescript
+validateOrderStorage(data: any): boolean // Type-safe validation
 saveOrderDraft(data: Partial<OrderDraft>): Promise<void>
-getOrderDraft(): Promise<OrderDraft | null>
-clearOrderData(): Promise<void>
 initializeOrderDraft(): Promise<void>
 ```
 
 ## Data Models
 
-### Order Draft
+### SenderDetails
 ```typescript
-interface OrderDraft {
-  sender: SenderDetails;
-  receiver?: ReceiverDetails;
-  delivery: {
-    scheduledPickup: string;
-    vehicle: string;
-    fee: number;
-  };
-  locations: OrderLocations;
-  items: ItemDetails[];
-  pricing: {
-    itemValue: number;
-    deliveryFee: number;
-    total: number;
-  };
-  orderDetails?: {
-    status: 'draft';
-    createdAt: string;
-    updatedAt: string;
-  };
+export interface SenderDetails {
+  name: string;
+  phone: string;
+  address: string;
+  state: string;
 }
 ```
 
-### Item Details
+### ItemDetails
 ```typescript
-interface ItemDetails {
+export interface ItemDetails {
   category: string;
   subcategory: string;
   name: string;
@@ -119,87 +95,43 @@ interface ItemDetails {
 }
 ```
 
-## Category Configuration
+## Business Rules
+
+### Delivery Fee Calculation
 ```typescript
-const CATEGORIES_WITH_SUBCATEGORIES: Record<CategoryType, Array<{ 
-  name: string; 
-  weightRange: { 
-    min: number; 
-    max: number; 
-    step: number 
-  } 
-}>>
+const calculateDeliveryFee = (weight: number): number => {
+  let fee = 1000; // Base fee
+  if (weight <= 5) fee += weight * 200;
+  else if (weight <= 20) fee += 1000 + (weight - 5) * 150;
+  else fee += 3250 + (weight - 20) * 100;
+  return Math.round(fee);
+};
 ```
 
-## Important Constants
-
-### Vehicle Types
+### Vehicle Weight Limits
 ```typescript
-const VEHICLES: Record<string, { maxWeight: number }> = {
+const VEHICLES = {
   bike: { maxWeight: 100 },
   car: { maxWeight: 500 },
   truck: { maxWeight: 1000 }
 };
 ```
 
-### Image Constants
-```typescript
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_IMAGES_PER_ITEM = 3;
-const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png'];
-```
-
-## Business Rules
-
-### Delivery Fee Calculation
-1. Base fee: 1000
-2. Weight-based additional charges:
-   - ≤ 5kg: 200/kg
-   - 5-20kg: 1000 + 150/kg over 5kg
-   - >20kg: 3250 + 100/kg over 20kg
-
-### Validation Rules
-1. Item weight must be within category-specific ranges
-2. Required fields:
-   - Item: name, category, subcategory, quantity, weight, value
-   - Sender: name, phone, address, state
-   - Receiver: name, phone, state, address (if delivery method is 'delivery')
-
-## State Management
-- Uses React's useState for local state
-- AsyncStorage for order draft persistence
-- Firebase for final order storage
+## Integration Points
+1. Firebase Auth for user management
+2. Firestore for order storage
+3. React Native Image Picker
+4. AsyncStorage for draft persistence
 
 ## Error Handling
-1. Form validation with specific error messages
-2. Storage service error handling
-3. Image upload validation and error handling
+1. Form validation with specific messages
+2. Type-safe storage validation
+3. Image upload constraints
+4. Network error recovery
 
-## Security Considerations
-1. User authentication required
-2. Data validation before storage
-3. Image size and type restrictions
-4. Firebase security rules
-
-## Integration Points
-1. Firebase Authentication
-2. Firebase Firestore
-3. Image Picker
-4. AsyncStorage
-5. Payment Gateway (to be implemented)
-
-## Development Guidelines
-1. Use TypeScript for type safety
-2. Follow the established component structure
-3. Implement proper error handling
-4. Add console logging for debugging
-5. Validate data at each step
-6. Use constants for configuration values
-
-## Testing Considerations
-1. Form validation
-2. Data persistence
-3. Image upload
-4. Fee calculations
-5. State management
-6. Error scenarios
+## Testing Guidelines
+1. Form validation scenarios
+2. Fee calculation accuracy
+3. Data persistence verification
+4. Image upload handling
+5. Navigation state preservation
