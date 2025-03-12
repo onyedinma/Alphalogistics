@@ -34,7 +34,20 @@ export const theme = {
       secondary: '#F2F2F7',
       tertiary: '#E5E5EA'
     },
-    border: '#D1D1D6'
+    border: '#D1D1D6',
+    darkMode: {
+      background: {
+        primary: '#1C1C1E',
+        secondary: '#2C2C2E',
+        tertiary: '#3A3A3C'
+      },
+      text: {
+        primary: '#FFFFFF',
+        secondary: '#EBEBF5',
+        tertiary: '#EBEBF599'
+      },
+      border: '#38383A'
+    }
   },
   typography: {
     sizes: {

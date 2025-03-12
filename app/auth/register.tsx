@@ -1,78 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, StyleSheet, ViewStyle, TextStyle } from 'react-native';
 import { Stack, router } from 'expo-router';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import auth from '@react-native-firebase/auth';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
-import firestore from '@react-native-firebase/firestore';
-import { authStyles as styles } from '../../styles/auth';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
-import { signUp } from '@/services/auth';
-import { UserRole } from '@/types/auth';
+import { signUp, createCustomerProfile } from '@/services/auth';
+import { signInWithGoogle, verifyCustomerRole } from '@/services/googleAuth';
+import { theme } from '@/styles/theme';
+import { useColorScheme } from '@/hooks/useColorScheme';
 
-// Initialize Google Sign-In (same as in login.tsx)
-GoogleSignin.configure({
-  webClientId: '733359249229-g8708ugilkga4u5m532rjfiqrcb91uef.apps.googleusercontent.com',
-  offlineAccess: true,
-  forceCodeForRefreshToken: true,
-});
+// Type definitions
+interface RegisterScreenProps {}
 
-const userRoles = [
-  { id: 'customer', label: 'Customer', icon: 'person-outline' },
-  { id: 'delivery', label: 'Delivery Personnel', icon: 'bicycle-outline' },
-  { id: 'staff', label: 'Staff', icon: 'briefcase-outline' },
-];
-
-const validateEmail = (email: string) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
-const validatePassword = (password: string) => {
-  return password.length >= 6;
-};
-
-const checkEmailExists = async (email: string) => {
-  try {
-    // Check Firestore for existing user with role
-    const usersSnapshot = await firestore()
-      .collection('users')
-      .where('email', '==', email.toLowerCase())
-      .limit(1)
-      .get();
-
-    if (!usersSnapshot.empty) {
-      const existingUser = usersSnapshot.docs[0].data();
-      return {
-        exists: true,
-        role: existingUser.role,
-        message: `This email is already registered as a ${existingUser.role}. Please use a different email.`
-      };
-    }
-
-    // Check Firebase Auth
-    const methods = await auth().fetchSignInMethodsForEmail(email);
-    if (methods.length > 0) {
-      return {
-        exists: true,
-        role: 'user',
-        message: 'This email is already registered. Please sign in instead.'
-      };
-    }
-
-    return { exists: false, role: null, message: null };
-  } catch (error) {
-    console.error('Email check error:', error);
-    return {
-      exists: true,
-      role: 'unknown',
-      message: 'Unable to verify email availability. Please try again.'
-    };
-  }
-};
-
-export default function Register() {
-  const { role } = useLocalSearchParams<{ role: UserRole }>();
+const Register: React.FC<RegisterScreenProps> = () => {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -80,62 +22,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!role || !['customer', 'staff', 'delivery'].includes(role)) {
-      router.replace('/auth/select-role');
-    }
-  }, [role]);
-
-  const handleGoogleSignUp = async () => {
-    try {
-      setLoading(true);
-      setError('');
-
-      // Check if device supports Google Play
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      
-      // Get the users ID token
-      await GoogleSignin.signIn();
-      const { idToken } = await GoogleSignin.getTokens();
-
-      if (!idToken) {
-        throw new Error('No ID token found');
-      }
-
-      // Create a Google credential with the token
-      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-      const userCredential = await auth().signInWithCredential(googleCredential);
-
-      // Create user profile
-      await firestore().collection('users').doc(userCredential.user.uid).set({
-        email: userCredential.user.email?.toLowerCase(),
-        name: userCredential.user.displayName,
-        role,
-        createdAt: firestore.Timestamp.now(),
-        updatedAt: firestore.Timestamp.now(),
-        emailVerified: userCredential.user.emailVerified
-      });
-
-      // Route to appropriate dashboard
-      switch (role) {
-        case 'customer': router.replace('/customer'); break;
-        case 'staff': router.replace('/staff'); break;
-        case 'delivery': router.replace('/delivery'); break;
-        default: throw new Error('Invalid role selected');
-      }
-    } catch (error: any) {
-      console.error('Google Sign-Up Error:', error);
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-        setError('');
-        return;
-      }
-      setError('Failed to sign up with Google. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRegister = async () => {
+  const handleRegister = async (): Promise<void> => {
     try {
       setLoading(true);
       setError(null);
@@ -148,32 +35,98 @@ export default function Register() {
         throw new Error('Passwords do not match');
       }
 
-      await signUp(email, password, role, name);
-      // Will automatically redirect based on role due to auth state change
-      
-    } catch (error: any) {
-      setError(error.message);
+      // Pass only email, password, and name to signUp
+      await signUp(email, password, name);
+      // Will automatically redirect to customer dashboard
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'An error occurred');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleGoogleSignUp = async (): Promise<void> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const userCredential = await signInWithGoogle();
+      
+      // Check if user already exists
+      try {
+        await verifyCustomerRole(userCredential.user.uid);
+        router.replace('/customer');
+        return;
+      } catch (error) {
+        // User doesn't exist - create new profile
+        await createCustomerProfile(
+          userCredential.user.uid,
+          userCredential.user.email,
+          userCredential.user.displayName
+        );
+        router.replace('/customer');
+      }
+
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        setError(error.message);
+      }
+      // Clean up if needed
+      await GoogleSignin.signOut().catch(() => {});
+      await auth().signOut().catch(() => {});
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBackToLogin = () => {
+    router.push('/auth/login');
+  };
+
   return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView 
+      style={[
+        styles.container,
+        { backgroundColor: '#FFFFFF' }
+      ]}
+    >
       <Stack.Screen options={{ headerShown: false }} />
       
       <View style={styles.header}>
-        <Ionicons name="cube-outline" size={60} color="#007AFF" />
-        <Text style={styles.headerText}>Create Account</Text>
-        <Text style={styles.subtitleText}>
-          {role === 'customer' ? 'Customer Account' : 
-           role === 'staff' ? 'Staff Account' : 'Delivery Partner Account'}
-        </Text>
+        <Ionicons name="cube-outline" size={60} color={theme.colors.primary} />
+        <Text style={[styles.headerText, { color: theme.colors.text.primary }]}>Create Customer Account</Text>
       </View>
 
-      <View style={styles.form}>
+      <View style={[
+        styles.formContainer,
+        {
+          backgroundColor: '#FFFFFF',
+          borderColor: theme.colors.border,
+          shadowColor: "#000",
+          shadowOffset: {
+            width: 0,
+            height: 2,
+          },
+          shadowOpacity: 0.1,
+          shadowRadius: 3.84,
+          elevation: 5,
+        }
+      ]}>
+        <Text style={[
+          styles.title,
+          { color: theme.colors.text.primary }
+        ]}>Create Account</Text>
+
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              backgroundColor: '#F5F5F5',
+              borderColor: theme.colors.border,
+              color: theme.colors.text.primary,
+            }
+          ]}
+          placeholderTextColor={theme.colors.text.tertiary}
           placeholder="Full Name"
           value={name}
           onChangeText={setName}
@@ -181,7 +134,15 @@ export default function Register() {
         />
 
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              backgroundColor: '#F5F5F5',
+              borderColor: theme.colors.border,
+              color: theme.colors.text.primary,
+            }
+          ]}
+          placeholderTextColor={theme.colors.text.tertiary}
           placeholder="Email"
           value={email}
           onChangeText={setEmail}
@@ -191,7 +152,15 @@ export default function Register() {
         />
 
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              backgroundColor: '#F5F5F5',
+              borderColor: theme.colors.border,
+              color: theme.colors.text.primary,
+            }
+          ]}
+          placeholderTextColor={theme.colors.text.tertiary}
           placeholder="Password"
           value={password}
           onChangeText={setPassword}
@@ -201,7 +170,15 @@ export default function Register() {
         />
 
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              backgroundColor: '#F5F5F5',
+              borderColor: theme.colors.border,
+              color: theme.colors.text.primary,
+            }
+          ]}
+          placeholderTextColor={theme.colors.text.tertiary}
           placeholder="Confirm Password"
           value={confirmPassword}
           onChangeText={setConfirmPassword}
@@ -211,36 +188,58 @@ export default function Register() {
         />
 
         <TouchableOpacity 
-          style={styles.button} 
+          style={[styles.button, { backgroundColor: theme.colors.primary }]} 
           onPress={handleRegister}
           disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>Create Account</Text>
+            <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>Create Account</Text>
           )}
         </TouchableOpacity>
 
         <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>OR</Text>
-          <View style={styles.dividerLine} />
+          <View style={[styles.dividerLine, { backgroundColor: '#E5E5E5' }]} />
+          <Text style={[styles.dividerText, { color: theme.colors.text.tertiary }]}>OR</Text>
+          <View style={[styles.dividerLine, { backgroundColor: '#E5E5E5' }]} />
         </View>
 
         <TouchableOpacity
-          style={[styles.socialButton, { backgroundColor: '#fff' }]}
+          style={[styles.socialButton, { 
+            backgroundColor: '#FFFFFF',
+            borderColor: '#E5E5E5',
+            shadowColor: "#000",
+            shadowOffset: {
+              width: 0,
+              height: 1,
+            },
+            shadowOpacity: 0.05,
+            shadowRadius: 2,
+            elevation: 2,
+          }]}
           onPress={handleGoogleSignUp}
           disabled={loading}
         >
           <Ionicons name="logo-google" size={24} color="#DB4437" />
-          <Text style={styles.socialButtonText}>Continue with Google</Text>
+          <Text style={[styles.socialButtonText, { color: theme.colors.text.primary }]}>
+            Continue with Google
+          </Text>
         </TouchableOpacity>
 
         <View style={styles.footer}>
           <TouchableOpacity onPress={() => router.back()}>
-            <Text style={styles.footerText}>
+            <Text style={[styles.footerText, { color: theme.colors.text.secondary }]}>
               <Ionicons name="arrow-back" size={16} /> Back to previous screen
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.footer}>
+          <TouchableOpacity onPress={handleBackToLogin}>
+            <Text style={[styles.footerText, { color: theme.colors.text.secondary }]}>
+              Already have an account? {' '}
+              <Text style={[styles.link, { color: theme.colors.primary }]}>Sign In</Text>
             </Text>
           </TouchableOpacity>
         </View>
@@ -248,3 +247,116 @@ export default function Register() {
     </ScrollView>
   );
 }
+
+export default Register;
+
+interface RegisterStyles {
+  header: ViewStyle;
+  headerText: TextStyle;
+  form: ViewStyle;
+  input: TextStyle;  // Changed from ViewStyle to TextStyle
+  button: ViewStyle;
+  buttonText: TextStyle;
+  socialButton: ViewStyle;
+  socialButtonText: TextStyle;
+  divider: ViewStyle;
+  dividerLine: ViewStyle;
+  dividerText: TextStyle;
+  footer: ViewStyle;
+  footerText: TextStyle;
+  link: TextStyle;
+  container: ViewStyle;
+  formContainer: ViewStyle;
+  title: TextStyle;
+}
+
+const styles = StyleSheet.create<RegisterStyles>({
+  header: {
+    marginBottom: 40,
+    alignItems: 'center',
+  },
+  headerText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 10,
+  },
+  form: {
+    gap: 15,
+  },
+  input: {
+    backgroundColor: theme.colors.background.primary,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    fontSize: 16,
+    color: theme.colors.text.primary,
+  } as TextStyle,
+  button: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    alignItems: 'center',
+    marginTop: theme.spacing.md,
+  },
+  buttonText: {
+    color: theme.colors.text.inverse,
+    fontWeight: '600' as '600',  // Explicit type assertion
+    fontSize: theme.typography.sizes.base,
+  },
+  socialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    gap: 10,
+  },
+  socialButtonText: {
+    fontSize: theme.typography.sizes.base,
+    color: theme.colors.text.primary,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: theme.spacing.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: theme.colors.border,
+  },
+  dividerText: {
+    marginHorizontal: theme.spacing.md,
+    color: theme.colors.text.tertiary,
+  },
+  footer: {
+    marginTop: theme.spacing.md,
+    alignItems: 'center',
+  },
+  footerText: {
+    color: theme.colors.text.secondary,
+  },
+  link: {
+    color: theme.colors.primary,
+    fontWeight: '600' as '600',  // Explicit type assertion
+  },
+  container: {
+    flex: 1,
+    padding: 16,
+  },
+  formContainer: {
+    padding: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 24,
+  },
+});

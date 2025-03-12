@@ -76,7 +76,7 @@ export interface OrderDraft {
     phone: string;
     state: string;
   };
-  receiver: {
+  receiver: {  // Remove optional from receiver
     name: string;
     address: string;
     phone: string;

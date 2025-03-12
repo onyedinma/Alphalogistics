@@ -2,25 +2,20 @@ import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import { UserRole, UserData } from '@/types/auth';
 
-export async function checkExistingRole(email: string): Promise<UserRole | null> {
+export async function checkExistingUser(email: string): Promise<boolean> {
   const userSnapshot = await firestore()
     .collection('users')
     .where('email', '==', email)
     .get();
 
-  if (!userSnapshot.empty) {
-    const userData = userSnapshot.docs[0].data();
-    return userData.role as UserRole;
-  }
-
-  return null;
+  return !userSnapshot.empty;
 }
 
-export async function signUp(email: string, password: string, role: UserRole, displayName: string) {
-  // Check if email already exists with a different role
-  const existingRole = await checkExistingRole(email);
-  if (existingRole) {
-    throw new Error(`This email is already registered as a ${existingRole}`);
+export async function signUp(email: string, password: string, displayName: string) {
+  // Check if email already exists
+  const exists = await checkExistingUser(email);
+  if (exists) {
+    throw new Error('This email is already registered');
   }
 
   // Create auth user
@@ -32,10 +27,10 @@ export async function signUp(email: string, password: string, role: UserRole, di
 
   // Create user document
   const userData: UserData = {
-    uid: user.uid,
+    id: user.uid,
     email: user.email!,
-    role,
-    displayName,
+    role: 'customer', // Always customer
+    name: displayName,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -54,5 +49,24 @@ export async function signIn(email: string, password: string) {
     throw new Error('User data not found');
   }
 
-  return userDoc.data() as UserData;
-} 
+  const userData = userDoc.data() as UserData;
+  return userData;
+}
+
+export async function createCustomerProfile(
+  uid: string,
+  email: string | null,
+  displayName: string | null
+) {
+  const userData = {
+    id: uid,
+    email: email || '',
+    role: 'customer',
+    name: displayName || '',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  await firestore().collection('users').doc(uid).set(userData);
+  return userData;
+}

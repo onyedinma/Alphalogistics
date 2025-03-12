@@ -1,10 +1,11 @@
-export type UserRole = 'customer' | 'staff' | 'delivery';
-
 export interface UserData {
-  uid: string;
+  id: string;
   email: string;
-  role: UserRole;
-  displayName: string;
+  name: string;
+  role: 'customer' | 'admin' | 'staff' | 'delivery';
+  phoneNumber?: string;
   createdAt: Date;
   updatedAt: Date;
-} 
+}
+
+export type UserRole = 'customer' | 'admin' | 'staff' | 'delivery';
